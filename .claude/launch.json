@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "quantx",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8080", "--directory", "/Users/tolentino/Library/CloudStorage/GoogleDrive-cleiton@jonelincendio.com.br/Outros computadores/SSD/JONEL SSD 2026/CLAUDE JONEL/CODE/QUANTX-WEBSITE"],
+      "port": 8080,
+      "autoPort": false
+    }
+  ]
+}
