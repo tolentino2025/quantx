@@ -1,0 +1,89 @@
+version: "3.9"
+
+services:
+  # ── infraestrutura ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-quantx}
+      POSTGRES_USER:     ${POSTGRES_USER:-quantx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quantx}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── serviço ML (Python / FastAPI) ─────────────────────────────────────────
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      MODEL_DIR: /models
+    volumes:
+      - model_weights:/models:ro
+      - page_images:/tmp/quantx-pages
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # ── backend API + worker (Node.js) ────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV:      production
+      PORT:          3000
+      HOST:          0.0.0.0
+      REDIS_URL:     redis://redis:6379
+      ML_BASE_URL:   http://ml:8000
+      DATABASE_URL:  postgres://${POSTGRES_USER:-quantx}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quantx}
+    volumes:
+      - page_images:/tmp/quantx-pages
+      - telemetry:/tmp/quantx-telemetry
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      ml:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  redis_data:
+  postgres_data:
+  model_weights:
+  page_images:
+  telemetry:
