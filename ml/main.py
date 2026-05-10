@@ -1,11 +1,14 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from scale_detection import detect_scale, get_recommended_config
+from yolo_inference import YOLOInferenceEngine, TileConfig, ModelRegistry
 from schemas import (
     ScaleDetectionRequest,
     ScaleDetectionResponse,
@@ -15,6 +18,23 @@ from schemas import (
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
+
+
+_registry = ModelRegistry()
+_yolo_engine = YOLOInferenceEngine(registry=_registry)
+
+
+class YOLOInferenceRequest(BaseModel):
+    plan_id: str
+    page_number: int = 1
+    image_path: str
+    model_version: str
+    tile_size: int = 1024
+    overlap: float = 0.20
+    imgsz: int = 1024
+    conf: float = 0.25
+    iou: float = 0.45
+    legend_region: Optional[BBox] = None
 
 
 @asynccontextmanager
@@ -130,6 +150,42 @@ def scale_detection_reverse(
         ),
         warnings=warnings,
     )
+
+
+@app.post("/yolo-inference")
+def yolo_inference(request: YOLOInferenceRequest) -> dict:
+    """
+    Run YOLO inference on a rendered page image.
+    Returns per-tile raw detections in tile-local coordinates.
+    TileNMS (TypeScript) handles cross-tile deduplication downstream.
+    """
+    if not os.path.exists(request.image_path):
+        raise HTTPException(status_code=404, detail=f"Image not found: {request.image_path}")
+
+    log.info(
+        "YOLO inference | plan_id=%s page=%d model=%s",
+        request.plan_id, request.page_number, request.model_version,
+    )
+
+    try:
+        result = _yolo_engine.run(
+            plan_id=request.plan_id,
+            page_number=request.page_number,
+            image_path=request.image_path,
+            model_version=request.model_version,
+            tile_config=TileConfig(
+                tile_size=request.tile_size,
+                overlap=request.overlap,
+                imgsz=request.imgsz,
+                conf=request.conf,
+                iou=request.iou,
+            ),
+            legend_region=request.legend_region,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return _yolo_engine.serialize_result(result)
 
 
 @app.exception_handler(Exception)
