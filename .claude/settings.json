@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/user/quantx/.claude/hooks/pre-deploy-check.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/user/quantx/.claude/hooks/pre-threshold-change.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /home/user/quantx/.claude/hooks/pre-model-swap.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/user/quantx/.claude/hooks/post-recognition.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /home/user/quantx/.claude/hooks/post-human-review.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
