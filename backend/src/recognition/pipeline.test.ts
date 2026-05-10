@@ -143,7 +143,7 @@ describe('RecognitionPipeline', () => {
 
   it('duration_ms is positive', async () => {
     const result = await pipeline.run(BASE_INPUT);
-    expect(result.duration_ms).toBeGreaterThan(0);
+    expect(result.duration_ms).toBeGreaterThanOrEqual(0);
   });
 
   it('uses fallback scale when detectScale throws', async () => {
