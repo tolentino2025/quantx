@@ -9,6 +9,13 @@ from pydantic import BaseModel
 
 from scale_detection import detect_scale, get_recommended_config
 from yolo_inference import YOLOInferenceEngine, TileConfig, ModelRegistry
+from dinov2_inference import (
+    DINOv2Embedder,
+    FewShotMatcher,
+    InMemoryEmbeddingStore,
+    DetectionHint,
+    similarity_tier,
+)
 from schemas import (
     ScaleDetectionRequest,
     ScaleDetectionResponse,
@@ -22,6 +29,27 @@ log = logging.getLogger(__name__)
 
 _registry = ModelRegistry()
 _yolo_engine = YOLOInferenceEngine(registry=_registry)
+_embedding_store = InMemoryEmbeddingStore()  # swap for PostgresEmbeddingStore in production
+
+
+class EmbedRequest(BaseModel):
+    tenant_id: str
+    class_slug: str
+    sample_id: Optional[str] = None
+    image_path: str
+    bbox_x1: int
+    bbox_y1: int
+    bbox_x2: int
+    bbox_y2: int
+    dinov2_window: int = 128
+
+
+class MatchRequest(BaseModel):
+    tenant_id: str
+    image_path: str
+    detections: list[dict]   # list of DetectionHint dicts
+    dinov2_window: int = 128
+    top_k: int = 5
 
 
 class YOLOInferenceRequest(BaseModel):
@@ -186,6 +214,133 @@ def yolo_inference(request: YOLOInferenceRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc))
 
     return _yolo_engine.serialize_result(result)
+
+
+@app.post("/dinov2/embed")
+def dinov2_embed(request: EmbedRequest) -> dict:
+    """
+    Generate and persist a DINOv2 embedding for a new catalog sample.
+    Called by Dataset Curation Agent after each human correction.
+    """
+    if not os.path.exists(request.image_path):
+        raise HTTPException(status_code=404, detail=f"Image not found: {request.image_path}")
+
+    try:
+        embedder = DINOv2Embedder()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"DINOv2 model unavailable: {exc}")
+
+    matcher = FewShotMatcher(embedder=embedder, store=_embedding_store)
+    image = Image.open(request.image_path).convert("RGB")
+    crop = DINOv2Embedder.make_crop(
+        image,
+        request.bbox_x1, request.bbox_y1,
+        request.bbox_x2, request.bbox_y2,
+        request.dinov2_window,
+    )
+    record = matcher.embed_and_store(
+        tenant_id=request.tenant_id,
+        class_slug=request.class_slug,
+        crop=crop,
+        sample_id=request.sample_id,
+    )
+
+    log.info("Embedding stored | tenant=%s class=%s sample=%s", request.tenant_id, request.class_slug, record.sample_id)
+    return {
+        "sample_id": record.sample_id,
+        "tenant_id": record.tenant_id,
+        "class_slug": record.class_slug,
+        "embedding_dim": len(record.embedding),
+        "library_size": _embedding_store.count_by_tenant(request.tenant_id),
+    }
+
+
+@app.post("/dinov2/match")
+def dinov2_match(request: MatchRequest) -> dict:
+    """
+    Match a batch of YOLO detections against the tenant's personal library.
+    Returns similarity scores and agreement with YOLO classification.
+    """
+    if not os.path.exists(request.image_path):
+        raise HTTPException(status_code=404, detail=f"Image not found: {request.image_path}")
+
+    library_size = _embedding_store.count_by_tenant(request.tenant_id)
+    if library_size == 0:
+        return {
+            "tenant_id": request.tenant_id,
+            "library_size": 0,
+            "matches": [],
+            "warning": "tenant_library_empty",
+        }
+
+    try:
+        embedder = DINOv2Embedder()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"DINOv2 model unavailable: {exc}")
+
+    hints = [
+        DetectionHint(
+            detection_id=d["detection_id"],
+            tile_id=d["tile_id"],
+            yolo_class_slug=d["class_slug"],
+            bbox_x1=d["bbox_tile"]["x1"],
+            bbox_y1=d["bbox_tile"]["y1"],
+            bbox_x2=d["bbox_tile"]["x2"],
+            bbox_y2=d["bbox_tile"]["y2"],
+            yolo_confidence=d.get("confidence", 0.0),
+        )
+        for d in request.detections
+    ]
+
+    image = Image.open(request.image_path).convert("RGB")
+    matcher = FewShotMatcher(embedder=embedder, store=_embedding_store)
+    results = matcher.match_batch(
+        request.tenant_id, image, hints,
+        dinov2_window=request.dinov2_window,
+        top_k=request.top_k,
+    )
+
+    matches = []
+    for hint, match in zip(hints, results):
+        if match is None:
+            matches.append({
+                "detection_id": hint.detection_id,
+                "matched": False,
+                "similarity": 0.0,
+                "tier": "no_match",
+            })
+        else:
+            matches.append({
+                "detection_id": match.detection_id,
+                "matched": True,
+                "matched_class_slug": match.matched_class_slug,
+                "yolo_class_slug": match.class_slug,
+                "similarity": match.similarity,
+                "tier": similarity_tier(match.similarity),
+                "agreement": match.agreement,
+                "top_k": [
+                    {"class_slug": m.class_slug, "similarity": m.similarity}
+                    for m in match.top_k
+                ],
+            })
+
+    return {
+        "tenant_id": request.tenant_id,
+        "library_size": library_size,
+        "matches": matches,
+    }
+
+
+@app.delete("/dinov2/library/{tenant_id}/{class_slug}")
+def dinov2_delete_class(tenant_id: str, class_slug: str) -> dict:
+    """Soft-delete all embeddings for a class (use after catalog soft-delete)."""
+    deleted = _embedding_store.delete_by_class(tenant_id, class_slug)
+    return {
+        "tenant_id": tenant_id,
+        "class_slug": class_slug,
+        "deleted_count": deleted,
+        "library_size": _embedding_store.count_by_tenant(tenant_id),
+    }
 
 
 @app.exception_handler(Exception)
