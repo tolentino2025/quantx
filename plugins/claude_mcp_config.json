@@ -1,0 +1,37 @@
+{
+  "mcpServers": {
+    "quantx-catalog": {
+      "command": "npx",
+      "args": ["tsx", "src/catalog-mcp.ts"],
+      "cwd": "${workspaceFolder}/plugins",
+      "env": {
+        "CATALOG_PATH": "${workspaceFolder}/config/catalog.json"
+      }
+    },
+    "quantx-pgvector": {
+      "command": "npx",
+      "args": ["tsx", "src/pgvector-mcp.ts"],
+      "cwd": "${workspaceFolder}/plugins",
+      "env": {
+        "ML_BASE_URL": "http://localhost:8000",
+        "ML_TIMEOUT_MS": "15000"
+      }
+    },
+    "quantx-telemetry": {
+      "command": "npx",
+      "args": ["tsx", "src/telemetry-mcp.ts"],
+      "cwd": "${workspaceFolder}/plugins",
+      "env": {
+        "TELEMETRY_DIR": "/tmp/quantx-telemetry"
+      }
+    },
+    "quantx-yolo-registry": {
+      "command": "npx",
+      "args": ["tsx", "src/yolo-registry-mcp.ts"],
+      "cwd": "${workspaceFolder}/plugins",
+      "env": {
+        "MODEL_REGISTRY_PATH": "${workspaceFolder}/config/models/registry.json"
+      }
+    }
+  }
+}
