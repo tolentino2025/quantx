@@ -107,7 +107,7 @@ export class RecognitionOrchestrator {
   private validateInput(input: OrchestratorInput, warnings: string[]): void {
     if (!input.plan_id) throw new Error('plan_id é obrigatório');
     if (!input.tenant_id) throw new Error('tenant_id é obrigatório');
-    if (!input.tile_list?.length) throw new Error('tile_list não pode ser vazio');
+    if (!input.tile_list?.length) warnings.push('tile_list vazio — tiles serão determinados pelo motor YOLO');
 
     if (input.scale_confidence === null || input.scale_confidence === undefined) {
       throw new Error(
