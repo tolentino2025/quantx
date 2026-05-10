@@ -1,0 +1,134 @@
+{
+  "_comment": "Regras de roteamento e orquestração do pipeline de reconhecimento QuantX.",
+  "_version": "1.0",
+  "_last_updated": "2026-05-09",
+
+  "pipeline_order": {
+    "description": "Ordem de execução dos pipelines. YOLO sempre primeiro. DINOv2 em paralelo se biblioteca existir.",
+    "always_first": "yolo",
+    "parallel_with_yolo": ["dinov2"],
+    "on_demand": ["rtdetr", "vision"],
+    "audit_mode_only": ["template_matching"]
+  },
+
+  "yolo": {
+    "enabled": true,
+    "model_path": "models/yolov15-spci-2026.04.pt",
+    "classes_file": "models/yolov15-spci-2026.04.classes.json",
+    "default_conf": 0.25,
+    "default_iou": 0.45,
+    "use_sahi": true,
+    "sahi_postprocess": "NMM"
+  },
+
+  "dinov2": {
+    "enabled": true,
+    "model_name": "facebook/dinov2-base",
+    "embedding_dim": 768,
+    "pooling": "cls_token",
+    "normalize": true,
+    "run_condition": "tenant_library_size > 0",
+    "top_k": 5,
+    "default_threshold": 0.75
+  },
+
+  "rtdetr": {
+    "enabled": true,
+    "run_condition": "confidence_router_decision == verify AND bbox_quality == loose",
+    "description": "Refina bbox quando ConfidenceRouter indicar bbox suspeita. Nunca como passada inicial."
+  },
+
+  "template_matching": {
+    "enabled": false,
+    "run_condition": "audit_mode == true",
+    "description": "NUNCA usar quando classe está no YOLO, exceto audit_mode=true.",
+    "override_requires": "audit_mode_explicit_flag"
+  },
+
+  "vision": {
+    "primary": "claude-sonnet-4-6",
+    "fallback_order": ["gpt-4o", "gemini-1.5-flash"],
+    "run_condition": "confidence_router_decision == verify_with_vision AND budget_ok",
+    "prompt_version": "v2.1",
+    "max_retries": 2,
+    "timeout_s": 15
+  },
+
+  "tile_config": {
+    "description": "Configuração de tiles por escala. Derivado pelo Scale Detection Agent.",
+    "scales": {
+      "1:50":  { "dpi": 200, "tile_size": 640,  "overlap": 0.15, "imgsz": 640  },
+      "1:75":  { "dpi": 250, "tile_size": 768,  "overlap": 0.18, "imgsz": 768  },
+      "1:100": { "dpi": 300, "tile_size": 1024, "overlap": 0.20, "imgsz": 1024 },
+      "1:150": { "dpi": 350, "tile_size": 1024, "overlap": 0.22, "imgsz": 1024 },
+      "1:200": { "dpi": 400, "tile_size": 1280, "overlap": 0.25, "imgsz": 1280 },
+      "1:250": { "dpi": 450, "tile_size": 1280, "overlap": 0.25, "imgsz": 1280 },
+      "unknown": { "dpi": 300, "tile_size": 1024, "overlap": 0.20, "imgsz": 1024,
+                   "note": "Fallback quando escala não detectada. Emitir warning." }
+    }
+  },
+
+  "nms_cross_tile": {
+    "iou_threshold": 0.45,
+    "centroid_merge_ratio": 0.50,
+    "border_px_margin": 5,
+    "conflict_strategy": "keep_highest_confidence"
+  },
+
+  "scale_detection": {
+    "methods_priority": ["ocr_cartouche", "graphic_bar", "reverse_inference", "fallback"],
+    "fallback_scale": "1:100",
+    "fallback_confidence": 0.30,
+    "min_confidence_to_skip_detection": 0.70,
+    "cartouche_region_ratio": { "x": 0.72, "y": 0.82 }
+  },
+
+  "legend_masking": {
+    "enabled": true,
+    "fill_color": [255, 255, 255],
+    "search_keywords": ["LEGENDA", "LISTA DE SÍMBOLOS", "SIMBOLOGIA"],
+    "fallback_if_not_found": "warn_and_continue"
+  },
+
+  "routing": {
+    "auto_accept_goes_to": "persist_detection",
+    "verify_with_vision_goes_to": "vision_agent",
+    "send_to_review_goes_to": "human_review_queue",
+    "reject_goes_to": "discard_with_trail",
+    "fallback_goes_to": "human_review_queue"
+  },
+
+  "dataset_curation": {
+    "finetune_threshold_samples": 200,
+    "finetune_weekly_min_samples": 50,
+    "finetune_weekly_day": "friday",
+    "finetune_weekly_hour_utc": 1,
+    "reembed_dinov2_immediately": true,
+    "augmentation_multiplier": 8
+  },
+
+  "multi_tenancy": {
+    "base_model_tenant_id": null,
+    "personal_library_key": ["tenant_id", "slug"],
+    "embeddings_partition_by": "tenant_id",
+    "finetune_isolation": "per_tenant",
+    "base_model_finetune_requires_consent": true
+  },
+
+  "audit": {
+    "required_fields": ["source", "model_version", "confidence", "router_decision", "router_justification", "timestamp"],
+    "persist_all_detections": true,
+    "persist_rejected": true,
+    "telemetry_format": "jsonl",
+    "telemetry_path": "/tmp/quantx-telemetry/{date}_recognition.jsonl"
+  },
+
+  "alerts": {
+    "budget_alert_pct": 0.60,
+    "fp_rate_warning": 0.05,
+    "fp_rate_critical": 0.10,
+    "confidence_high_fp_warning": 0.75,
+    "class_coverage_critical": 5,
+    "class_coverage_insufficient": 20
+  }
+}

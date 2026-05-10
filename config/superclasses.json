@@ -1,0 +1,116 @@
+{
+  "_comment": "Taxonomia canônica de superclasses SPCI. Editar somente após revisão com engenheiro SPCI e atualização do CLAUDE.md §4.",
+  "_version": "1.0",
+  "_last_updated": "2026-05-09",
+  "_nbr_base": "NBR 10897, NBR 13714, NBR 17240, NBR 12693, NBR 15808, NBR 15809, NBR 16981",
+
+  "superclasses": {
+    "sprinkler": {
+      "label": "Chuveiro Automático",
+      "nbr_reference": "NBR 10897:2020",
+      "subtypes": {
+        "pendent":   { "label": "Descendente", "rotation_invariant": false, "flip_invariant": false },
+        "upright":   { "label": "Ascendente",  "rotation_invariant": false, "flip_invariant": false },
+        "sidewall":  { "label": "Lateral",     "rotation_invariant": false, "flip_invariant": true  },
+        "concealed": { "label": "Oculto",      "rotation_invariant": true,  "flip_invariant": true  },
+        "dry":       { "label": "Seco / Antifreeze", "rotation_invariant": false, "flip_invariant": false }
+      }
+    },
+
+    "extintor": {
+      "label": "Extintor Portátil",
+      "nbr_reference": "NBR 12693:2023",
+      "subtypes": {
+        "pqs":      { "label": "Pó Químico Seco (ABC)",   "rotation_invariant": true, "flip_invariant": true },
+        "co2":      { "label": "Gás Carbônico (BC)",       "rotation_invariant": true, "flip_invariant": true },
+        "agua":     { "label": "Água Pressurizada (A)",    "rotation_invariant": true, "flip_invariant": true },
+        "affs":     { "label": "Espuma (AFFF)",            "rotation_invariant": true, "flip_invariant": true },
+        "classe-k": { "label": "Classe K (Cozinha)",       "rotation_invariant": true, "flip_invariant": true }
+      }
+    },
+
+    "hidrante": {
+      "label": "Hidrante",
+      "nbr_reference": "NBR 13714:2019",
+      "subtypes": {
+        "parede":      { "label": "De Parede (Armário)",    "rotation_invariant": false, "flip_invariant": false },
+        "recalque":    { "label": "De Recalque (Passeio)",  "rotation_invariant": true,  "flip_invariant": true  },
+        "coluna-seca": { "label": "Coluna Seca",            "rotation_invariant": false, "flip_invariant": false }
+      }
+    },
+
+    "detector": {
+      "label": "Detector de Incêndio",
+      "nbr_reference": "NBR 17240:2010",
+      "subtypes": {
+        "fumaca":       { "label": "Fumaça (Óptico/Iônico)",       "rotation_invariant": true, "flip_invariant": true },
+        "temperatura":  { "label": "Temperatura (Termovelocimétrico)", "rotation_invariant": true, "flip_invariant": true },
+        "multicriterio":{ "label": "Multicritério (Fumaça + Temp)", "rotation_invariant": true, "flip_invariant": true },
+        "gas":          { "label": "Gás (CO, GLP, GN)",            "rotation_invariant": true, "flip_invariant": true },
+        "beam":         { "label": "Linear (Feixe)",               "rotation_invariant": false,"flip_invariant": true  }
+      }
+    },
+
+    "alarme": {
+      "label": "Sistema de Alarme",
+      "nbr_reference": "NBR 17240:2010",
+      "subtypes": {
+        "manual":  { "label": "Acionador Manual",            "rotation_invariant": false, "flip_invariant": false },
+        "sirene":  { "label": "Sirene / Audiovisual",        "rotation_invariant": true,  "flip_invariant": true  },
+        "central": { "label": "Central de Alarme (CPDA)",    "rotation_invariant": false, "flip_invariant": false },
+        "modulo":  { "label": "Módulo Endereçável (E/S)",    "rotation_invariant": false, "flip_invariant": false }
+      }
+    },
+
+    "valvula": {
+      "label": "Válvula",
+      "nbr_reference": "NBR 10897:2020",
+      "subtypes": {
+        "governadora": { "label": "Governadora / Alarme de Fluxo", "rotation_invariant": false, "flip_invariant": false },
+        "retencao":    { "label": "Retenção (Check Valve)",        "rotation_invariant": false, "flip_invariant": false },
+        "gaveta":      { "label": "Gaveta",                        "rotation_invariant": false, "flip_invariant": false },
+        "recalque":    { "label": "Registro de Recalque",          "rotation_invariant": false, "flip_invariant": false }
+      }
+    },
+
+    "bomba": {
+      "label": "Bomba de Incêndio",
+      "nbr_reference": "NBR 10897:2020",
+      "subtypes": {
+        "principal": { "label": "Bomba Principal",   "rotation_invariant": false, "flip_invariant": false },
+        "jockey":    { "label": "Bomba Jockey",      "rotation_invariant": false, "flip_invariant": false },
+        "diesel":    { "label": "Bomba a Diesel",    "rotation_invariant": false, "flip_invariant": false }
+      }
+    },
+
+    "mangotinho": {
+      "label": "Mangotinho",
+      "nbr_reference": "NBR 13714:2019",
+      "subtypes": {
+        "parede": { "label": "Mangotinho de Parede", "rotation_invariant": false, "flip_invariant": false }
+      }
+    },
+
+    "iluminacao-emergencia": {
+      "label": "Iluminação de Emergência",
+      "nbr_reference": "NBR 10898:2013",
+      "subtypes": {
+        "bloco":            { "label": "Bloco Autônomo",     "rotation_invariant": false, "flip_invariant": false },
+        "pictograma-saida": { "label": "Pictograma de Saída","rotation_invariant": false, "flip_invariant": true  }
+      }
+    }
+  },
+
+  "validation_rules": {
+    "new_superclass_requires": [
+      "revisão_com_engenheiro_spci",
+      "atualização_do_claude_md_secao_4",
+      "nbr_reference_obrigatória"
+    ],
+    "new_subtype_requires": [
+      "visual_description_pt_br",
+      "rotation_invariant_definido",
+      "flip_invariant_definido"
+    ]
+  }
+}

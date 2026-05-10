@@ -1,0 +1,222 @@
+{
+  "_comment": "Thresholds de confiança por classe para o ConfidenceRouter. Editar somente com justificativa no commit message e via hook pre-threshold-change.sh.",
+  "_version": "1.0",
+  "_last_updated": "2026-05-09",
+
+  "defaults": {
+    "auto_accept": 0.85,
+    "verify_with_vision": 0.65,
+    "reject": 0.40,
+    "calibrated": false
+  },
+
+  "budget": {
+    "hard_cap_cents": 50.0,
+    "alert_cents": 30.0,
+    "estimated_vision_cost_cents": 2.5
+  },
+
+  "source_weights": {
+    "yolo":     { "weight": 1.00 },
+    "dinov2":   { "weight": 0.95 },
+    "rtdetr":   { "weight": 1.05 },
+    "vision":   { "weight": 1.00 },
+    "template": { "weight": 0.70 }
+  },
+
+  "agreement_rules": {
+    "yolo_dinov2_agree_boost":    0.10,
+    "yolo_dinov2_disagree_cap":   0.65,
+    "border_detection_penalty":   "downgrade_one_level",
+    "uncalibrated_max_auto_accept": 0.90
+  },
+
+  "by_class": {
+    "sprinkler-pendent-k57": {
+      "auto_accept": 0.87,
+      "verify_with_vision": 0.68,
+      "reject": 0.40,
+      "calibrated": true,
+      "last_calibration": "2026-04-20",
+      "sample_size": 1240,
+      "notes": "Classe mais comum. Alta confiança validada em 1240 amostras."
+    },
+    "sprinkler-upright-k57": {
+      "auto_accept": 0.88,
+      "verify_with_vision": 0.70,
+      "reject": 0.42,
+      "calibrated": true,
+      "last_calibration": "2026-04-20",
+      "sample_size": 890,
+      "notes": "Confundido com pendent em plantas antigas. Threshold ligeiramente mais alto."
+    },
+    "sprinkler-sidewall": {
+      "auto_accept": 0.90,
+      "verify_with_vision": 0.72,
+      "reject": 0.45,
+      "calibrated": true,
+      "last_calibration": "2026-04-15",
+      "sample_size": 312,
+      "notes": "Visual distinto — threshold alto. Aparece menos em plantas residenciais."
+    },
+    "sprinkler-concealed": {
+      "auto_accept": 0.85,
+      "verify_with_vision": 0.65,
+      "reject": 0.40,
+      "calibrated": false,
+      "notes": "Não calibrado. Símbolo varia muito entre fabricantes."
+    },
+    "extintor-pqs": {
+      "auto_accept": 0.90,
+      "verify_with_vision": 0.70,
+      "reject": 0.45,
+      "calibrated": true,
+      "last_calibration": "2026-04-28",
+      "sample_size": 847,
+      "notes": "FP rate histórico: 8.2% com threshold 0.85. Elevado para 0.90."
+    },
+    "extintor-co2": {
+      "auto_accept": 0.88,
+      "verify_with_vision": 0.68,
+      "reject": 0.42,
+      "calibrated": true,
+      "last_calibration": "2026-04-28",
+      "sample_size": 423,
+      "notes": "Visual distinto do PQS. Menos FP histórico."
+    },
+    "extintor-agua": {
+      "auto_accept": 0.87,
+      "verify_with_vision": 0.67,
+      "reject": 0.40,
+      "calibrated": false,
+      "notes": "Não calibrado. Poucos exemplos no dataset base."
+    },
+    "extintor-affs": {
+      "auto_accept": 0.85,
+      "verify_with_vision": 0.65,
+      "reject": 0.40,
+      "calibrated": false,
+      "notes": "Não calibrado. Classe rara."
+    },
+    "extintor-classe-k": {
+      "auto_accept": 0.85,
+      "verify_with_vision": 0.65,
+      "reject": 0.40,
+      "calibrated": false,
+      "notes": "Não calibrado. Aparece apenas em plantas de cozinha industrial."
+    },
+    "hidrante-parede": {
+      "auto_accept": 0.88,
+      "verify_with_vision": 0.68,
+      "reject": 0.42,
+      "calibrated": true,
+      "last_calibration": "2026-04-10",
+      "sample_size": 634,
+      "notes": "NBR 13714. Visual bem distinto. Threshold calibrado."
+    },
+    "hidrante-recalque": {
+      "auto_accept": 0.90,
+      "verify_with_vision": 0.72,
+      "reject": 0.45,
+      "calibrated": true,
+      "last_calibration": "2026-04-10",
+      "sample_size": 278,
+      "notes": "Aparece em área externa. Visual muito distinto — threshold alto."
+    },
+    "hidrante-coluna-seca": {
+      "auto_accept": 0.85,
+      "verify_with_vision": 0.65,
+      "reject": 0.40,
+      "calibrated": false,
+      "notes": "Não calibrado. Classe rara em plantas residenciais."
+    },
+    "detector-fumaca": {
+      "auto_accept": 0.86,
+      "verify_with_vision": 0.66,
+      "reject": 0.40,
+      "calibrated": true,
+      "last_calibration": "2026-04-18",
+      "sample_size": 1108,
+      "notes": "NBR 17240. Circular — confunde com outros detectores. Threshold moderado."
+    },
+    "detector-temperatura": {
+      "auto_accept": 0.87,
+      "verify_with_vision": 0.68,
+      "reject": 0.42,
+      "calibrated": true,
+      "last_calibration": "2026-04-18",
+      "sample_size": 512,
+      "notes": "Similar ao de fumaça mas com símbolo interno diferente."
+    },
+    "detector-multicriterio": {
+      "auto_accept": 0.88,
+      "verify_with_vision": 0.70,
+      "reject": 0.44,
+      "calibrated": false,
+      "notes": "Não calibrado. Símbolo varia por fabricante."
+    },
+    "detector-gas": {
+      "auto_accept": 0.85,
+      "verify_with_vision": 0.65,
+      "reject": 0.40,
+      "calibrated": false,
+      "notes": "Não calibrado. Classe rara no dataset base."
+    },
+    "alarme-manual": {
+      "auto_accept": 0.89,
+      "verify_with_vision": 0.70,
+      "reject": 0.44,
+      "calibrated": true,
+      "last_calibration": "2026-04-22",
+      "sample_size": 489,
+      "notes": "Visual distinto (quadrado com seta). Threshold alto."
+    },
+    "alarme-sirene": {
+      "auto_accept": 0.87,
+      "verify_with_vision": 0.68,
+      "reject": 0.42,
+      "calibrated": true,
+      "last_calibration": "2026-04-22",
+      "sample_size": 341
+    },
+    "alarme-central": {
+      "auto_accept": 0.85,
+      "verify_with_vision": 0.65,
+      "reject": 0.40,
+      "calibrated": false,
+      "notes": "Não calibrado. CPDA — aparece uma vez por planta, posição fixa."
+    },
+    "valvula-governadora": {
+      "auto_accept": 0.87,
+      "verify_with_vision": 0.68,
+      "reject": 0.42,
+      "calibrated": true,
+      "last_calibration": "2026-04-12",
+      "sample_size": 387
+    },
+    "bomba-principal": {
+      "auto_accept": 0.88,
+      "verify_with_vision": 0.70,
+      "reject": 0.44,
+      "calibrated": true,
+      "last_calibration": "2026-04-12",
+      "sample_size": 203
+    },
+    "bomba-jockey": {
+      "auto_accept": 0.87,
+      "verify_with_vision": 0.68,
+      "reject": 0.42,
+      "calibrated": false,
+      "notes": "Não calibrado. Similar à bomba principal — confusão frequente."
+    },
+    "mangotinho-parede": {
+      "auto_accept": 0.86,
+      "verify_with_vision": 0.66,
+      "reject": 0.40,
+      "calibrated": true,
+      "last_calibration": "2026-04-15",
+      "sample_size": 298,
+      "notes": "NBR 13714. Frequentemente confundido com hidrante de parede."
+    }
+  }
+}
