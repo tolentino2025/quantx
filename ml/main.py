@@ -5,6 +5,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from PIL import Image
 from pydantic import BaseModel
 
 from scale_detection import detect_scale, get_recommended_config
@@ -129,27 +130,27 @@ def scale_detection(request: ScaleDetectionRequest) -> ScaleDetectionResponse:
     )
 
 
+class ScaleDetectionReverseRequest(ScaleDetectionRequest, ReverseInferenceHint):
+    """Combined body for the reverse-inference endpoint (ScaleDetectionRequest + ReverseInferenceHint)."""
+
+
 @app.post("/scale-detection/reverse", response_model=ScaleDetectionResponse)
-def scale_detection_reverse(
-    request: ScaleDetectionRequest,
-    hint: ReverseInferenceHint,
-) -> ScaleDetectionResponse:
+def scale_detection_reverse(request: ScaleDetectionReverseRequest) -> ScaleDetectionResponse:
     """
     Estimate scale from a known symbol's physical size and its detected bbox.
     Used when OCR and graphic bar both fail but a reference detection exists.
     """
-    bbox = hint.bbox
+    bbox = request.bbox
     bbox_px = max(bbox.x2 - bbox.x1, bbox.y2 - bbox.y1)
     if bbox_px <= 0:
         raise HTTPException(status_code=422, detail="bbox has zero size")
 
-    pixels_per_mm = hint.current_dpi / 25.4
-    denominator = bbox_px / (hint.known_physical_mm * pixels_per_mm)
+    pixels_per_mm = request.current_dpi / 25.4
+    denominator = bbox_px / (request.known_physical_mm * pixels_per_mm)
 
     from scale_detection import snap_to_common_scale, _estimate_cartouche_region
-    from PIL import Image as PILImage
 
-    img = PILImage.open(request.image_path)
+    img = Image.open(request.image_path)
     width, height = img.size
     cartouche = _estimate_cartouche_region(width, height)
 
@@ -172,8 +173,8 @@ def scale_detection_reverse(
         legend_region=None,
         recommended=recommended,
         uncertainty_note=(
-            f"Escala estimada por inferência reversa usando '{hint.class_slug}' "
-            f"({hint.known_physical_mm}mm físicos, {bbox_px}px detectados a {hint.current_dpi}dpi). "
+            f"Escala estimada por inferência reversa usando '{request.class_slug}' "
+            f"({request.known_physical_mm}mm físicos, {bbox_px}px detectados a {request.current_dpi}dpi). "
             f"Denominador bruto: {denominator:.1f}, ajustado para: {snapped}."
         ),
         warnings=warnings,
