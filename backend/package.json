@@ -1,0 +1,31 @@
+{
+  "name": "quantx-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/api/server.ts",
+    "build": "tsc --outDir dist",
+    "start": "node dist/api/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:smoke": "tsx src/scripts/smoke-test.ts",
+    "validate:model": "tsx src/scripts/validate-model.ts"
+  },
+  "dependencies": {
+    "bullmq": "^5.0.0",
+    "fastify": "^4.0.0",
+    "ioredis": "^5.0.0",
+    "pg": "^8.0.0",
+    "pgvector": "^0.1.0",
+    "uuid": "^9.0.0",
+    "zod": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.0.0",
+    "@types/uuid": "^9.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
