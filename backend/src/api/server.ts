@@ -1,6 +1,10 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import multipart from '@fastify/multipart';
 import { Redis } from 'ioredis';
 import { randomUUID } from 'crypto';
+import { createWriteStream, mkdirSync } from 'fs';
+import { join } from 'path';
+import { pipeline } from 'stream/promises';
 import {
   createRecognitionQueue,
   createRecognitionWorker,
@@ -11,10 +15,13 @@ import { MLClient } from '../workers/ml-client.js';
 
 // ── env ───────────────────────────────────────────────────────────────────────
 
-const ML_BASE_URL = process.env.ML_BASE_URL ?? 'http://localhost:8000';
-const REDIS_URL   = process.env.REDIS_URL   ?? 'redis://localhost:6379';
-const PORT        = Number(process.env.PORT ?? 3000);
-const HOST        = process.env.HOST        ?? '0.0.0.0';
+const ML_BASE_URL  = process.env.ML_BASE_URL  ?? 'http://localhost:8000';
+const REDIS_URL    = process.env.REDIS_URL    ?? 'redis://localhost:6379';
+const PORT         = Number(process.env.PORT  ?? 3000);
+const HOST         = process.env.HOST         ?? '0.0.0.0';
+const UPLOAD_DIR   = process.env.UPLOAD_DIR   ?? '/tmp/quantx-pages';
+const MODEL_VERSION = process.env.MODEL_VERSION ?? 'yolov15-spci-2026.04';
+const RENDER_DPI   = Number(process.env.RENDER_DPI ?? 150);
 
 // ── app factory ───────────────────────────────────────────────────────────────
 
@@ -27,6 +34,10 @@ export async function buildApp(opts: {
   const mlBaseUrl = opts.mlBaseUrl ?? ML_BASE_URL;
 
   const app = Fastify({ logger: { level: 'info' } });
+
+  await app.register(multipart, {
+    limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB
+  });
 
   const redis = new Redis(redisUrl, { maxRetriesPerRequest: null });
   const queue = createRecognitionQueue(redis);
@@ -44,6 +55,78 @@ export async function buildApp(opts: {
       status: mlOk ? 'ok' : 'degraded',
       service: 'quantx-backend',
       ml_service: mlOk ? 'ok' : 'unreachable',
+    };
+  });
+
+  // ── POST /plans — upload PDF, render pages, queue all recognition jobs ───────
+
+  app.post('/plans', async (request, reply) => {
+    const data = await request.file();
+    if (!data) {
+      reply.code(400);
+      return { error: 'no_file', detail: 'Envie o PDF como multipart/form-data com o campo "file"' };
+    }
+    if (!data.mimetype.includes('pdf') && !data.filename?.endsWith('.pdf')) {
+      reply.code(422);
+      return { error: 'invalid_file_type', detail: 'Apenas arquivos PDF são aceitos' };
+    }
+
+    const tenantId     = (request.query as Record<string, string>).tenant_id ?? 'default';
+    const planId       = randomUUID();
+    const planDir      = join(UPLOAD_DIR, planId);
+    const pdfPath      = join(planDir, 'original.pdf');
+
+    mkdirSync(planDir, { recursive: true });
+    await pipeline(data.file, createWriteStream(pdfPath));
+
+    // Render PDF pages via ML service
+    let renderResult: { page_count: number; image_paths: string[] };
+    try {
+      const res = await fetch(`${mlBaseUrl}/render-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_id: planId,
+          pdf_path: pdfPath,
+          dpi: RENDER_DPI,
+          output_dir: UPLOAD_DIR,
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText })) as { detail?: string };
+        reply.code(res.status >= 500 ? 502 : res.status);
+        return { error: 'render_failed', detail: err.detail ?? 'ML service error' };
+      }
+      renderResult = await res.json() as typeof renderResult;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      reply.code(502);
+      return { error: 'render_failed', detail: `ML service unreachable: ${msg}` };
+    }
+
+    // Queue one recognition job per page
+    const jobs = await Promise.all(
+      renderResult.image_paths.map((imagePath, i) => {
+        const jobData: RecognitionJobData = {
+          plan_id: planId,
+          page_number: i + 1,
+          tenant_id: tenantId,
+          image_path: imagePath,
+          model_version: MODEL_VERSION,
+          tenant_library_size: 0,
+        };
+        return queue.add(`recognize-${planId}-p${i + 1}`, jobData, { jobId: randomUUID() });
+      }),
+    );
+
+    reply.code(202);
+    return {
+      plan_id: planId,
+      tenant_id: tenantId,
+      page_count: renderResult.page_count,
+      status: 'processing',
+      jobs: jobs.map((j, i) => ({ job_id: j.id, page_number: i + 1 })),
     };
   });
 
@@ -149,6 +232,50 @@ export async function buildApp(opts: {
         ...(failedReason ? { error: failedReason } : {}),
         attempts_made: job.attemptsMade,
         created_at: new Date(job.timestamp).toISOString(),
+      };
+    },
+  );
+
+  // ── GET /plans/:plan_id — poll all page jobs for a plan ────────────────────
+
+  app.get<{ Params: { plan_id: string } }>(
+    '/plans/:plan_id',
+    async (request, reply) => {
+      const { plan_id } = request.params;
+
+      // BullMQ doesn't store job→plan mapping natively; we query by naming convention
+      const jobList = await queue.getJobs(['waiting', 'active', 'completed', 'failed', 'delayed']);
+      const planJobs = jobList.filter((j) => j.data?.plan_id === plan_id);
+
+      if (planJobs.length === 0) {
+        reply.code(404);
+        return { error: 'plan_not_found', plan_id };
+      }
+
+      const pages = await Promise.all(
+        planJobs.map(async (job) => {
+          const state = await job.getState();
+          return {
+            job_id: job.id,
+            page_number: job.data.page_number,
+            state,
+            progress: job.progress,
+            ...(state === 'completed' ? { result: await job.returnvalue } : {}),
+            ...(state === 'failed'    ? { error: job.failedReason }        : {}),
+          };
+        }),
+      );
+
+      pages.sort((a, b) => a.page_number - b.page_number);
+
+      const allDone = pages.every((p) => p.state === 'completed' || p.state === 'failed');
+      const anyFailed = pages.some((p) => p.state === 'failed');
+
+      return {
+        plan_id,
+        page_count: pages.length,
+        status: allDone ? (anyFailed ? 'partial' : 'completed') : 'processing',
+        pages,
       };
     },
   );

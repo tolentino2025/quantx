@@ -1,6 +1,7 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,8 @@ from fastapi.responses import JSONResponse
 from PIL import Image
 from pydantic import BaseModel
 
+from pdf2image import convert_from_path
+from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError
 from scale_detection import detect_scale, get_recommended_config
 from yolo_inference import YOLOInferenceEngine, TileConfig, ModelRegistry
 from dinov2_inference import (
@@ -341,6 +344,52 @@ def dinov2_delete_class(tenant_id: str, class_slug: str) -> dict:
         "class_slug": class_slug,
         "deleted_count": deleted,
         "library_size": _embedding_store.count_by_tenant(tenant_id),
+    }
+
+
+class RenderPDFRequest(BaseModel):
+    plan_id: str
+    pdf_path: str
+    dpi: int = 150
+    output_dir: str = "/tmp/quantx-pages"
+
+
+@app.post("/render-pdf")
+def render_pdf(request: RenderPDFRequest) -> dict:
+    """
+    Convert each page of a PDF to a PNG image.
+    Returns the list of rendered image paths in page order.
+    Images are saved to output_dir/{plan_id}/page-{n:03d}.png.
+    """
+    if not os.path.exists(request.pdf_path):
+        raise HTTPException(status_code=404, detail=f"PDF not found: {request.pdf_path}")
+
+    out_dir = Path(request.output_dir) / request.plan_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        pages = convert_from_path(request.pdf_path, dpi=request.dpi)
+    except PDFInfoNotInstalledError:
+        raise HTTPException(status_code=503, detail="poppler not installed — PDF rendering unavailable")
+    except PDFPageCountError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid or corrupt PDF: {exc}")
+    except Exception as exc:
+        log.exception("PDF render failed | plan=%s", request.plan_id)
+        raise HTTPException(status_code=500, detail=f"PDF render error: {exc}")
+
+    image_paths: list[str] = []
+    for i, page in enumerate(pages, start=1):
+        path = out_dir / f"page-{i:03d}.png"
+        page.save(str(path), "PNG")
+        image_paths.append(str(path))
+
+    log.info("PDF rendered | plan=%s pages=%d dpi=%d", request.plan_id, len(pages), request.dpi)
+
+    return {
+        "plan_id": request.plan_id,
+        "page_count": len(pages),
+        "dpi": request.dpi,
+        "image_paths": image_paths,
     }
 
 

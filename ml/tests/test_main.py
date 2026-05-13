@@ -422,3 +422,81 @@ class TestDINOv2DeleteClass:
 
         assert res.status_code == 200
         assert res.json()["deleted_count"] == 0
+
+
+# ── POST /render-pdf ──────────────────────────────────────────────────────────
+
+
+class TestRenderPDFEndpoint:
+    def _fake_pages(self, n=3):
+        return [Image.new("RGB", (2480, 3508), color=(255, 255, 255)) for _ in range(n)]
+
+    def test_returns_404_when_pdf_missing(self, tmp_path):
+        res = client.post("/render-pdf", json={
+            "plan_id": str(uuid4()),
+            "pdf_path": "/nonexistent/file.pdf",
+            "output_dir": str(tmp_path),
+        })
+        assert res.status_code == 404
+
+    def test_returns_page_count_and_paths(self, tmp_path):
+        plan_id = str(uuid4())
+        fake_pdf = tmp_path / "plan.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4 fake")
+
+        with patch("main.convert_from_path", return_value=self._fake_pages(3)):
+            res = client.post("/render-pdf", json={
+                "plan_id": plan_id,
+                "pdf_path": str(fake_pdf),
+                "output_dir": str(tmp_path),
+            })
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["page_count"] == 3
+        assert len(body["image_paths"]) == 3
+        assert body["plan_id"] == plan_id
+
+    def test_image_paths_are_sequential(self, tmp_path):
+        fake_pdf = tmp_path / "plan.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4 fake")
+
+        with patch("main.convert_from_path", return_value=self._fake_pages(2)):
+            res = client.post("/render-pdf", json={
+                "plan_id": "plan-test",
+                "pdf_path": str(fake_pdf),
+                "output_dir": str(tmp_path),
+            })
+
+        paths = res.json()["image_paths"]
+        assert paths[0].endswith("page-001.png")
+        assert paths[1].endswith("page-002.png")
+
+    def test_returns_503_when_poppler_missing(self, tmp_path):
+        from pdf2image.exceptions import PDFInfoNotInstalledError
+        fake_pdf = tmp_path / "plan.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4 fake")
+
+        with patch("main.convert_from_path", side_effect=PDFInfoNotInstalledError()):
+            res = client.post("/render-pdf", json={
+                "plan_id": str(uuid4()),
+                "pdf_path": str(fake_pdf),
+                "output_dir": str(tmp_path),
+            })
+
+        assert res.status_code == 503
+        assert "poppler" in res.json()["detail"].lower()
+
+    def test_returns_422_for_corrupt_pdf(self, tmp_path):
+        from pdf2image.exceptions import PDFPageCountError
+        fake_pdf = tmp_path / "plan.pdf"
+        fake_pdf.write_bytes(b"not a pdf")
+
+        with patch("main.convert_from_path", side_effect=PDFPageCountError("bad pdf")):
+            res = client.post("/render-pdf", json={
+                "plan_id": str(uuid4()),
+                "pdf_path": str(fake_pdf),
+                "output_dir": str(tmp_path),
+            })
+
+        assert res.status_code == 422

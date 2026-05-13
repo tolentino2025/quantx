@@ -57,12 +57,15 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      NODE_ENV:      production
-      PORT:          3000
-      HOST:          0.0.0.0
-      REDIS_URL:     redis://redis:6379
-      ML_BASE_URL:   http://ml:8000
-      DATABASE_URL:  postgres://${POSTGRES_USER:-quantx}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quantx}
+      NODE_ENV:        production
+      PORT:            3000
+      HOST:            0.0.0.0
+      REDIS_URL:       redis://redis:6379
+      ML_BASE_URL:     http://ml:8000
+      DATABASE_URL:    postgres://${POSTGRES_USER:-quantx}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quantx}
+      UPLOAD_DIR:      /tmp/quantx-pages
+      MODEL_VERSION:   ${MODEL_VERSION:-yolov15-spci-2026.04}
+      RENDER_DPI:      ${RENDER_DPI:-150}
     volumes:
       - page_images:/tmp/quantx-pages
       - telemetry:/tmp/quantx-telemetry

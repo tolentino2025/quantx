@@ -12,6 +12,7 @@
     "validate:model": "tsx src/scripts/validate-model.ts"
   },
   "dependencies": {
+    "@fastify/multipart": "^8.3.1",
     "bullmq": "^5.0.0",
     "fastify": "^4.0.0",
     "ioredis": "^5.0.0",
