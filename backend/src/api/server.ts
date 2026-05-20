@@ -12,6 +12,8 @@ import {
   type RecognitionJobData,
 } from '../workers/recognition-worker.js';
 import { MLClient } from '../workers/ml-client.js';
+import { dbHealthCheck } from '../db/pool.js';
+import { createPlan, getPlan, updatePlanStatus, listPlansByTenant } from '../db/repositories/plans.js';
 
 // ── env ───────────────────────────────────────────────────────────────────────
 
@@ -50,11 +52,13 @@ export async function buildApp(opts: {
 
   app.get('/health', async () => {
     const mlClient = new MLClient({ baseUrl: mlBaseUrl, timeoutMs: 3_000, retries: 0 });
-    const mlOk = await mlClient.health();
+    const [mlOk, dbOk] = await Promise.all([mlClient.health(), dbHealthCheck()]);
+    const status = mlOk && dbOk ? 'ok' : 'degraded';
     return {
-      status: mlOk ? 'ok' : 'degraded',
+      status,
       service: 'quantx-backend',
       ml_service: mlOk ? 'ok' : 'unreachable',
+      database: dbOk ? 'ok' : 'unreachable',
     };
   });
 
@@ -78,6 +82,9 @@ export async function buildApp(opts: {
 
     mkdirSync(planDir, { recursive: true });
     await pipeline(data.file, createWriteStream(pdfPath));
+
+    // Persiste o plano no banco antes de qualquer processamento
+    await createPlan({ plan_id: planId, tenant_id: tenantId, file_name: data.filename }).catch(() => null);
 
     // Render PDF pages via ML service
     let renderResult: { page_count: number; image_paths: string[] };
@@ -236,6 +243,22 @@ export async function buildApp(opts: {
     },
   );
 
+  // ── GET /plans — list plans for a tenant ──────────────────────────────────
+
+  app.get('/plans', async (request, reply) => {
+    const { tenant_id, limit, offset } = request.query as Record<string, string>;
+    if (!tenant_id) {
+      reply.code(400);
+      return { error: 'missing_param', detail: 'tenant_id é obrigatório' };
+    }
+    const rows = await listPlansByTenant(
+      tenant_id,
+      limit ? Number(limit) : 20,
+      offset ? Number(offset) : 0,
+    );
+    return { tenant_id, plans: rows, count: rows.length };
+  });
+
   // ── GET /plans/:plan_id — poll all page jobs for a plan ────────────────────
 
   app.get<{ Params: { plan_id: string } }>(
@@ -270,11 +293,16 @@ export async function buildApp(opts: {
 
       const allDone = pages.every((p) => p.state === 'completed' || p.state === 'failed');
       const anyFailed = pages.some((p) => p.state === 'failed');
+      const derivedStatus = allDone ? (anyFailed ? 'partial' : 'completed') : 'processing';
+
+      if (allDone) {
+        await updatePlanStatus(plan_id, derivedStatus as 'completed' | 'partial').catch(() => null);
+      }
 
       return {
         plan_id,
         page_count: pages.length,
-        status: allDone ? (anyFailed ? 'partial' : 'completed') : 'processing',
+        status: derivedStatus,
         pages,
       };
     },

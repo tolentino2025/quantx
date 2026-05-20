@@ -2,6 +2,8 @@ import { Worker, Job, Queue, QueueEvents } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { RecognitionPipeline, type PipelineInput, type PipelineResult } from '../recognition/pipeline.js';
 import { MLClient, type MLClientOptions } from './ml-client.js';
+import { saveDetections } from '../db/repositories/detections.js';
+import { updatePlanStatus } from '../db/repositories/plans.js';
 
 export interface RecognitionJobData {
   plan_id: string;
@@ -78,6 +80,12 @@ export function createRecognitionWorker(
 
       if (result.warnings.length > 0) {
         job.log(`Warnings: ${result.warnings.join(' | ')}`);
+      }
+
+      if (result.detections.length > 0) {
+        await saveDetections(data.plan_id, data.tenant_id, data.page_number, result.detections).catch((err) =>
+          job.log(`saveDetections failed: ${(err as Error).message}`),
+        );
       }
 
       await job.updateProgress(100);

@@ -95,46 +95,69 @@ else
 fi
 
 # ── 4. PostgreSQL ─────────────────────────────────────────────────────────────
-info "Configurando PostgreSQL..."
 
-PG_VERSION=$(pg_lsclusters -h 2>/dev/null | awk '{print $1}' | sort -n | tail -1)
-PG_CLUSTER=$(pg_lsclusters -h 2>/dev/null | awk '{print $2}' | tail -1)
-
-if [ -z "$PG_VERSION" ]; then
-  fail "PostgreSQL não encontrado — instale manualmente: apt-get install postgresql"
+# Se DATABASE_URL aponta para host externo (Supabase, RDS, etc.) pular instalação local
+_db_host=$(echo "$DATABASE_URL" | sed -E 's|.*@([^:/]+).*|\1|')
+_is_external_db=false
+if [[ "$DATABASE_URL" != *"localhost"* && "$DATABASE_URL" != *"127.0.0.1"* && -n "$DATABASE_URL" ]]; then
+  _is_external_db=true
 fi
 
-# Inicia o cluster se não estiver rodando
-if ! pg_lsclusters -h | grep -q "online"; then
-  pg_ctlcluster "$PG_VERSION" "$PG_CLUSTER" start
-  sleep 2
-fi
-
-# Cria usuário e banco
-su -c "psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='$PG_USER'\" | grep -q 1 || \
-  psql -c \"CREATE USER $PG_USER WITH PASSWORD '$PG_PASS' CREATEDB;\"" postgres 2>/dev/null || true
-
-su -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname='$PG_DB'\" | grep -q 1 || \
-  createdb -O $PG_USER $PG_DB" postgres 2>/dev/null || true
-
-# Extensões
-su -c "psql -d $PG_DB -c 'CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";'" postgres 2>/dev/null || true
-su -c "psql -d $PG_DB -c 'CREATE EXTENSION IF NOT EXISTS vector;'" postgres 2>/dev/null \
-  && ok "pgvector habilitado" || info "pgvector não disponível — embeddings usarão fallback em memória"
-
-# Migrations
-MIGRATIONS_DIR="$WORKSPACE/quantx/backend/migrations"
-if [ -d "$MIGRATIONS_DIR" ]; then
-  for f in "$MIGRATIONS_DIR"/*.sql; do
-    info "Aplicando migration: $(basename $f)"
-    PGPASSWORD="$PG_PASS" psql -h localhost -U "$PG_USER" -d "$PG_DB" -f "$f" \
-      >> "$LOG_DIR/migrations.log" 2>&1 && ok "$(basename $f)" || info "$(basename $f) — verifique $LOG_DIR/migrations.log"
-  done
+if $_is_external_db; then
+  info "DATABASE_URL aponta para host externo ($_db_host) — pulando instalação local do PostgreSQL"
+  # Apenas aplica migrations no banco remoto
+  MIGRATIONS_DIR="$WORKSPACE/quantx/backend/migrations"
+  if [ -d "$MIGRATIONS_DIR" ]; then
+    info "Aplicando migrations no banco remoto..."
+    for f in "$MIGRATIONS_DIR"/*.sql; do
+      info "  $(basename $f)"
+      psql "$DATABASE_URL" -f "$f" >> "$LOG_DIR/migrations.log" 2>&1 \
+        && ok "  $(basename $f)" || info "  $(basename $f) — verifique $LOG_DIR/migrations.log"
+    done
+  fi
+  ok "Banco externo configurado ($DATABASE_URL)"
 else
-  info "Pasta de migrations não encontrada em $MIGRATIONS_DIR"
-fi
+  info "Configurando PostgreSQL local..."
 
-ok "PostgreSQL pronto ($PG_USER@localhost:5432/$PG_DB)"
+  PG_VERSION=$(pg_lsclusters -h 2>/dev/null | awk '{print $1}' | sort -n | tail -1)
+  PG_CLUSTER=$(pg_lsclusters -h 2>/dev/null | awk '{print $2}' | tail -1)
+
+  if [ -z "$PG_VERSION" ]; then
+    fail "PostgreSQL não encontrado — instale manualmente: apt-get install postgresql"
+  fi
+
+  # Inicia o cluster se não estiver rodando
+  if ! pg_lsclusters -h | grep -q "online"; then
+    pg_ctlcluster "$PG_VERSION" "$PG_CLUSTER" start
+    sleep 2
+  fi
+
+  # Cria usuário e banco
+  su -c "psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='$PG_USER'\" | grep -q 1 || \
+    psql -c \"CREATE USER $PG_USER WITH PASSWORD '$PG_PASS' CREATEDB;\"" postgres 2>/dev/null || true
+
+  su -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname='$PG_DB'\" | grep -q 1 || \
+    createdb -O $PG_USER $PG_DB" postgres 2>/dev/null || true
+
+  # Extensões
+  su -c "psql -d $PG_DB -c 'CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";'" postgres 2>/dev/null || true
+  su -c "psql -d $PG_DB -c 'CREATE EXTENSION IF NOT EXISTS vector;'" postgres 2>/dev/null \
+    && ok "pgvector habilitado" || info "pgvector não disponível — embeddings usarão fallback em memória"
+
+  # Migrations
+  MIGRATIONS_DIR="$WORKSPACE/quantx/backend/migrations"
+  if [ -d "$MIGRATIONS_DIR" ]; then
+    for f in "$MIGRATIONS_DIR"/*.sql; do
+      info "Aplicando migration: $(basename $f)"
+      PGPASSWORD="$PG_PASS" psql -h localhost -U "$PG_USER" -d "$PG_DB" -f "$f" \
+        >> "$LOG_DIR/migrations.log" 2>&1 && ok "$(basename $f)" || info "$(basename $f) — verifique $LOG_DIR/migrations.log"
+    done
+  else
+    info "Pasta de migrations não encontrada em $MIGRATIONS_DIR"
+  fi
+
+  ok "PostgreSQL local pronto ($PG_USER@localhost:5432/$PG_DB)"
+fi
 
 # ── 5. ML Service (Python/FastAPI) ────────────────────────────────────────────
 info "Iniciando ML service..."
