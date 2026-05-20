@@ -1,9 +1,11 @@
 import logging
 import os
+import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from PIL import Image
@@ -347,50 +349,118 @@ def dinov2_delete_class(tenant_id: str, class_slug: str) -> dict:
     }
 
 
+# ── Supabase Storage helpers ──────────────────────────────────────────────────
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+
+def _storage_upload(bucket: str, path: str, data: bytes, content_type: str = "image/png") -> None:
+    """Upload bytes to Supabase Storage via REST API."""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
+    url = f"{SUPABASE_URL}/storage/v1/object/{bucket}/{path}"
+    resp = httpx.put(
+        url,
+        content=data,
+        headers={
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": content_type,
+            "x-upsert": "true",
+        },
+        timeout=120.0,
+    )
+    resp.raise_for_status()
+
+
+def _storage_ensure_bucket(bucket: str) -> None:
+    """Create bucket if it does not exist (ignores 'already exists' errors)."""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return
+    url = f"{SUPABASE_URL}/storage/v1/bucket"
+    resp = httpx.post(
+        url,
+        json={"id": bucket, "name": bucket, "public": False},
+        headers={
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+        },
+        timeout=10.0,
+    )
+    if resp.status_code not in (200, 201) and "already exists" not in resp.text.lower():
+        resp.raise_for_status()
+
+
+# ── /render-pdf ───────────────────────────────────────────────────────────────
+
 class RenderPDFRequest(BaseModel):
     plan_id: str
-    pdf_path: str
+    tenant_id: str
+    pdf_url: str           # Supabase signed URL for the original PDF
     dpi: int = 150
-    output_dir: str = "/tmp/quantx-pages"
 
 
 @app.post("/render-pdf")
 def render_pdf(request: RenderPDFRequest) -> dict:
     """
-    Convert each page of a PDF to a PNG image.
-    Returns the list of rendered image paths in page order.
-    Images are saved to output_dir/{plan_id}/page-{n:03d}.png.
+    Download PDF via signed URL, render each page to PNG,
+    upload pages to Supabase Storage (plans-pages bucket),
+    return storage_paths for each page.
     """
-    if not os.path.exists(request.pdf_path):
-        raise HTTPException(status_code=404, detail=f"PDF not found: {request.pdf_path}")
+    # Download PDF from signed URL into a temp file
+    try:
+        pdf_resp = httpx.get(request.pdf_url, timeout=120.0, follow_redirects=True)
+        pdf_resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to download PDF: {exc}")
 
-    out_dir = Path(request.output_dir) / request.plan_id
-    out_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_pdf:
+        tmp_pdf.write(pdf_resp.content)
+        tmp_pdf_path = tmp_pdf.name
 
     try:
-        pages = convert_from_path(request.pdf_path, dpi=request.dpi)
-    except PDFInfoNotInstalledError:
-        raise HTTPException(status_code=503, detail="poppler not installed — PDF rendering unavailable")
-    except PDFPageCountError as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid or corrupt PDF: {exc}")
-    except Exception as exc:
-        log.exception("PDF render failed | plan=%s", request.plan_id)
-        raise HTTPException(status_code=500, detail=f"PDF render error: {exc}")
+        try:
+            pages = convert_from_path(tmp_pdf_path, dpi=request.dpi)
+        except PDFInfoNotInstalledError:
+            raise HTTPException(status_code=503, detail="poppler not installed — PDF rendering unavailable")
+        except PDFPageCountError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid or corrupt PDF: {exc}")
+        except Exception as exc:
+            log.exception("PDF render failed | plan=%s", request.plan_id)
+            raise HTTPException(status_code=500, detail=f"PDF render error: {exc}")
 
-    image_paths: list[str] = []
-    for i, page in enumerate(pages, start=1):
-        path = out_dir / f"page-{i:03d}.png"
-        page.save(str(path), "PNG")
-        image_paths.append(str(path))
+        _storage_ensure_bucket("plans-pages")
 
-    log.info("PDF rendered | plan=%s pages=%d dpi=%d", request.plan_id, len(pages), request.dpi)
+        storage_paths: list[str] = []
+        for i, page in enumerate(pages, start=1):
+            png_bytes = _page_to_png_bytes(page)
+            rel_path = f"{request.tenant_id}/{request.plan_id}/page-{i:03d}.png"
+            try:
+                _storage_upload("plans-pages", rel_path, png_bytes, "image/png")
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=f"Storage upload failed page {i}: {exc}")
+            storage_paths.append(rel_path)
 
-    return {
-        "plan_id": request.plan_id,
-        "page_count": len(pages),
-        "dpi": request.dpi,
-        "image_paths": image_paths,
-    }
+        log.info(
+            "PDF rendered | plan=%s pages=%d dpi=%d",
+            request.plan_id, len(pages), request.dpi,
+        )
+
+        return {
+            "plan_id": request.plan_id,
+            "page_count": len(pages),
+            "dpi": request.dpi,
+            "storage_paths": storage_paths,
+        }
+    finally:
+        Path(tmp_pdf_path).unlink(missing_ok=True)
+
+
+def _page_to_png_bytes(page: Image.Image) -> bytes:
+    import io
+    buf = io.BytesIO()
+    page.save(buf, "PNG")
+    return buf.getvalue()
 
 
 @app.exception_handler(Exception)

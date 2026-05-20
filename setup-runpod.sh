@@ -2,6 +2,7 @@
 # setup-runpod.sh — configura e sobe todos os serviços QuantX num RunPod sem Docker
 # Uso: bash setup-runpod.sh
 # Requer: RunPod com Ubuntu, acesso root
+# Banco e Storage: Supabase (externo). Postgres local NUNCA é instalado.
 
 set -euo pipefail
 
@@ -25,33 +26,28 @@ echo ""
 # ── 1. Variáveis de ambiente ──────────────────────────────────────────────────
 info "Carregando variáveis de ambiente..."
 
-# Defaults
-PG_USER="${POSTGRES_USER:-takeoff}"
-PG_PASS="${POSTGRES_PASSWORD:-quantx_$(openssl rand -hex 8)}"
-PG_DB="${POSTGRES_DB:-takeoffdb}"
-REDIS_PORT="${REDIS_PORT:-6379}"
-ML_PORT="${ML_PORT:-8000}"
-BACKEND_PORT="${BACKEND_PORT:-3000}"
-MODEL_VERSION="${MODEL_VERSION:-yolov15-spci-2026.04}"
-RENDER_DPI="${RENDER_DPI:-150}"
-
 # Carregar .env se existir
 if [ -f "$ENV_FILE" ]; then
   set -a; source "$ENV_FILE"; set +a
   ok ".env carregado de $ENV_FILE"
 fi
 
-# Reaplica defaults (podem ter sido sobrescritos por .env)
-PG_USER="${POSTGRES_USER:-$PG_USER}"
-PG_PASS="${POSTGRES_PASSWORD:-$PG_PASS}"
-PG_DB="${POSTGRES_DB:-$PG_DB}"
-DATABASE_URL="${DATABASE_URL:-postgresql://$PG_USER:$PG_PASS@localhost:5432/$PG_DB}"
+# Obrigatórias
+SUPABASE_URL="${SUPABASE_URL:-}"
+SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-}"
+DATABASE_URL="${DATABASE_URL:-}"
 
-# Grava DATABASE_URL no .env se não existir
-if ! grep -q "DATABASE_URL" "$ENV_FILE" 2>/dev/null; then
-  echo "DATABASE_URL=$DATABASE_URL" >> "$ENV_FILE"
-  ok "DATABASE_URL gravado em $ENV_FILE"
-fi
+REDIS_PORT="${REDIS_PORT:-6379}"
+ML_PORT="${ML_PORT:-8000}"
+BACKEND_PORT="${BACKEND_PORT:-3000}"
+MODEL_VERSION="${MODEL_VERSION:-yolov15-spci-2026.04}"
+RENDER_DPI="${RENDER_DPI:-150}"
+
+[ -n "$SUPABASE_URL" ]              || fail "SUPABASE_URL não definida — adicione ao $ENV_FILE"
+[ -n "$SUPABASE_SERVICE_ROLE_KEY" ] || fail "SUPABASE_SERVICE_ROLE_KEY não definida — adicione ao $ENV_FILE"
+[ -n "$DATABASE_URL" ]              || fail "DATABASE_URL não definida — adicione ao $ENV_FILE"
+
+ok "Variáveis carregadas"
 
 # ── 2. Dependências de sistema ────────────────────────────────────────────────
 info "Verificando dependências do sistema..."
@@ -60,7 +56,6 @@ apt-get update -qq 2>/dev/null
 
 PKGS=()
 command -v redis-server &>/dev/null || PKGS+=(redis-server)
-command -v psql         &>/dev/null || PKGS+=(postgresql postgresql-contrib)
 command -v pdftoppm     &>/dev/null || PKGS+=(poppler-utils)
 command -v tesseract    &>/dev/null || PKGS+=(tesseract-ocr tesseract-ocr-por)
 command -v curl         &>/dev/null || PKGS+=(curl)
@@ -70,15 +65,6 @@ if [ ${#PKGS[@]} -gt 0 ]; then
   apt-get install -y --no-install-recommends "${PKGS[@]}" -qq 2>/dev/null
 fi
 
-# pgvector
-if ! psql -U "$PG_USER" -c "SELECT extname FROM pg_extension WHERE extname='vector'" 2>/dev/null | grep -q vector; then
-  if ! apt-cache show postgresql-16-pgvector &>/dev/null; then
-    apt-get install -y --no-install-recommends postgresql-common -qq
-    /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y -q 2>/dev/null || true
-  fi
-  apt-get install -y --no-install-recommends "postgresql-$(pg_lsclusters -h | awk '{print $1}' | tail -1)-pgvector" -qq 2>/dev/null \
-    || info "pgvector não instalado via apt — tentando build do fonte"
-fi
 ok "Dependências OK"
 
 # ── 3. Redis ──────────────────────────────────────────────────────────────────
@@ -94,75 +80,81 @@ else
   redis-cli ping | grep -q PONG && ok "Redis iniciado (porta $REDIS_PORT)" || fail "Redis não iniciou"
 fi
 
-# ── 4. PostgreSQL ─────────────────────────────────────────────────────────────
+# ── 4. Supabase — banco e storage ─────────────────────────────────────────────
+info "Validando conexão com Supabase Postgres..."
 
-# Se DATABASE_URL aponta para host externo (Supabase, RDS, etc.) pular instalação local
-_db_host=$(echo "$DATABASE_URL" | sed -E 's|.*@([^:/]+).*|\1|')
-_is_external_db=false
-if [[ "$DATABASE_URL" != *"localhost"* && "$DATABASE_URL" != *"127.0.0.1"* && -n "$DATABASE_URL" ]]; then
-  _is_external_db=true
-fi
-
-if $_is_external_db; then
-  info "DATABASE_URL aponta para host externo ($_db_host) — pulando instalação local do PostgreSQL"
-  # Apenas aplica migrations no banco remoto
-  MIGRATIONS_DIR="$WORKSPACE/quantx/backend/migrations"
-  if [ -d "$MIGRATIONS_DIR" ]; then
-    info "Aplicando migrations no banco remoto..."
-    for f in "$MIGRATIONS_DIR"/*.sql; do
-      info "  $(basename $f)"
-      psql "$DATABASE_URL" -f "$f" >> "$LOG_DIR/migrations.log" 2>&1 \
-        && ok "  $(basename $f)" || info "  $(basename $f) — verifique $LOG_DIR/migrations.log"
-    done
-  fi
-  ok "Banco externo configurado ($DATABASE_URL)"
+# Testa conexão com o banco
+if psql "$DATABASE_URL" -c "SELECT 1" > /dev/null 2>&1; then
+  ok "Supabase Postgres acessível"
 else
-  info "Configurando PostgreSQL local..."
-
-  PG_VERSION=$(pg_lsclusters -h 2>/dev/null | awk '{print $1}' | sort -n | tail -1)
-  PG_CLUSTER=$(pg_lsclusters -h 2>/dev/null | awk '{print $2}' | tail -1)
-
-  if [ -z "$PG_VERSION" ]; then
-    fail "PostgreSQL não encontrado — instale manualmente: apt-get install postgresql"
-  fi
-
-  # Inicia o cluster se não estiver rodando
-  if ! pg_lsclusters -h | grep -q "online"; then
-    pg_ctlcluster "$PG_VERSION" "$PG_CLUSTER" start
-    sleep 2
-  fi
-
-  # Cria usuário e banco
-  su -c "psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='$PG_USER'\" | grep -q 1 || \
-    psql -c \"CREATE USER $PG_USER WITH PASSWORD '$PG_PASS' CREATEDB;\"" postgres 2>/dev/null || true
-
-  su -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname='$PG_DB'\" | grep -q 1 || \
-    createdb -O $PG_USER $PG_DB" postgres 2>/dev/null || true
-
-  # Extensões
-  su -c "psql -d $PG_DB -c 'CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";'" postgres 2>/dev/null || true
-  su -c "psql -d $PG_DB -c 'CREATE EXTENSION IF NOT EXISTS vector;'" postgres 2>/dev/null \
-    && ok "pgvector habilitado" || info "pgvector não disponível — embeddings usarão fallback em memória"
-
-  # Migrations
-  MIGRATIONS_DIR="$WORKSPACE/quantx/backend/migrations"
-  if [ -d "$MIGRATIONS_DIR" ]; then
-    for f in "$MIGRATIONS_DIR"/*.sql; do
-      info "Aplicando migration: $(basename $f)"
-      PGPASSWORD="$PG_PASS" psql -h localhost -U "$PG_USER" -d "$PG_DB" -f "$f" \
-        >> "$LOG_DIR/migrations.log" 2>&1 && ok "$(basename $f)" || info "$(basename $f) — verifique $LOG_DIR/migrations.log"
-    done
-  else
-    info "Pasta de migrations não encontrada em $MIGRATIONS_DIR"
-  fi
-
-  ok "PostgreSQL local pronto ($PG_USER@localhost:5432/$PG_DB)"
+  fail "Não foi possível conectar ao Supabase Postgres — verifique DATABASE_URL"
 fi
+
+# Aplica migrations
+MIGRATIONS_DIR="$WORKSPACE/quantx/backend/migrations"
+if [ -d "$MIGRATIONS_DIR" ]; then
+  info "Aplicando migrations..."
+  for f in "$MIGRATIONS_DIR"/*.sql; do
+    info "  $(basename $f)"
+    psql "$DATABASE_URL" -f "$f" >> "$LOG_DIR/migrations.log" 2>&1 \
+      && ok "  $(basename $f)" \
+      || info "  $(basename $f) — verifique $LOG_DIR/migrations.log (pode já existir)"
+  done
+else
+  info "Pasta de migrations não encontrada em $MIGRATIONS_DIR"
+fi
+
+info "Validando Supabase Storage..."
+
+# Cria/valida buckets via REST API
+for BUCKET in plans-original plans-pages plans-processed symbols-library training-datasets exports; do
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST "${SUPABASE_URL}/storage/v1/bucket" \
+    -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "{\"id\":\"${BUCKET}\",\"name\":\"${BUCKET}\",\"public\":false}")
+  if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "201" ]; then
+    ok "  bucket criado: $BUCKET"
+  elif [ "$HTTP_STATUS" = "400" ] || [ "$HTTP_STATUS" = "409" ]; then
+    ok "  bucket existe: $BUCKET"
+  else
+    info "  bucket $BUCKET: HTTP $HTTP_STATUS (verifique permissões do service_role_key)"
+  fi
+done
+
+# Smoke test: upload, download e signed URL
+info "Smoke test de storage..."
+SMOKE_PATH="smoke-test/$(date +%s).txt"
+SMOKE_DATA="quantx-storage-ok"
+
+# Upload
+HTTP_UP=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X PUT "${SUPABASE_URL}/storage/v1/object/plans-original/${SMOKE_PATH}" \
+  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+  -H "Content-Type: text/plain" \
+  -H "x-upsert: true" \
+  --data-raw "$SMOKE_DATA")
+[ "$HTTP_UP" = "200" ] && ok "  upload OK" || fail "  upload falhou (HTTP $HTTP_UP)"
+
+# Signed URL
+HTTP_SIGN=$(curl -s -o /tmp/quantx-smoke-url.json -w "%{http_code}" \
+  -X POST "${SUPABASE_URL}/storage/v1/object/sign/plans-original/${SMOKE_PATH}" \
+  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"expiresIn":60}')
+[ "$HTTP_SIGN" = "200" ] && ok "  signed URL OK" || fail "  signed URL falhou (HTTP $HTTP_SIGN)"
+
+SIGNED_URL=$(python3 -c "import json,sys; d=json.load(open('/tmp/quantx-smoke-url.json')); print('${SUPABASE_URL}' + d['signedURL'])" 2>/dev/null || echo "")
+if [ -n "$SIGNED_URL" ]; then
+  DOWN_DATA=$(curl -sf "$SIGNED_URL" 2>/dev/null || echo "")
+  [ "$DOWN_DATA" = "$SMOKE_DATA" ] && ok "  download via signed URL OK" || info "  download retornou dados inesperados"
+fi
+
+ok "Supabase Storage validado"
 
 # ── 5. ML Service (Python/FastAPI) ────────────────────────────────────────────
 info "Iniciando ML service..."
 
-# Para instância anterior se existir
 pkill -f "uvicorn main:app" 2>/dev/null || true
 sleep 1
 
@@ -175,7 +167,10 @@ pip install -r requirements.txt -q 2>/dev/null
 MODEL_DIR="${MODEL_DIR:-/workspace/models}"
 mkdir -p "$MODEL_DIR"
 
-MODEL_DIR="$MODEL_DIR" nohup python -m uvicorn main:app \
+MODEL_DIR="$MODEL_DIR" \
+SUPABASE_URL="$SUPABASE_URL" \
+SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
+nohup python -m uvicorn main:app \
   --host 0.0.0.0 --port "$ML_PORT" \
   --log-level info \
   > "$LOG_DIR/ml.log" 2>&1 &
@@ -204,7 +199,8 @@ npm install -q 2>/dev/null
 REDIS_URL="redis://localhost:$REDIS_PORT" \
 ML_BASE_URL="http://localhost:$ML_PORT" \
 DATABASE_URL="$DATABASE_URL" \
-UPLOAD_DIR="/tmp/quantx-pages" \
+SUPABASE_URL="$SUPABASE_URL" \
+SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
 MODEL_VERSION="$MODEL_VERSION" \
 RENDER_DPI="$RENDER_DPI" \
 PORT="$BACKEND_PORT" \
@@ -220,7 +216,15 @@ else
   fail "Backend não respondeu — veja $LOG_DIR/backend.log"
 fi
 
-# ── 7. Resumo ─────────────────────────────────────────────────────────────────
+# ── 7. Smoke test end-to-end ──────────────────────────────────────────────────
+info "Smoke test: worker conecta ao banco..."
+if curl -sf "http://localhost:$BACKEND_PORT/health" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('database')=='ok' else 1)" 2>/dev/null; then
+  ok "Worker ↔ Banco OK"
+else
+  info "Health check: banco ainda inicializando — verifique $LOG_DIR/backend.log"
+fi
+
+# ── 8. Resumo ─────────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║                  QuantX está rodando!                   ║"
@@ -228,7 +232,8 @@ echo "╠═══════════════════════�
 printf "║  Backend API  : http://localhost:%-26s║\n" "$BACKEND_PORT"
 printf "║  ML Service   : http://localhost:%-26s║\n" "$ML_PORT"
 printf "║  Redis        : localhost:%-34s║\n" "$REDIS_PORT"
-printf "║  PostgreSQL   : localhost:5432/%-29s║\n" "$PG_DB"
+printf "║  Supabase DB  : %-43s║\n" "$(echo "$DATABASE_URL" | sed 's/postgresql:\/\/[^@]*@/postgresql:\/\/***@/')"
+printf "║  Storage      : %-43s║\n" "${SUPABASE_URL:-n/a}"
 echo "╠══════════════════════════════════════════════════════════╣"
 echo "║  Logs: /tmp/quantx-logs/                                ║"
 echo "╠══════════════════════════════════════════════════════════╣"

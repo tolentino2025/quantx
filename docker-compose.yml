@@ -1,5 +1,11 @@
 version: "3.9"
 
+# ── QuantX — Docker Compose (desenvolvimento local) ──────────────────────────
+# Banco e Storage: Supabase (externo). Configure .env com:
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL
+#
+# Para produção real use RunPod GPU para o serviço ml.
+
 services:
   # ── infraestrutura ────────────────────────────────────────────────────────
   redis:
@@ -13,22 +19,6 @@ services:
       timeout: 3s
       retries: 5
 
-  postgres:
-    image: pgvector/pgvector:pg16
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB:       ${POSTGRES_DB:-quantx}
-      POSTGRES_USER:     ${POSTGRES_USER:-quantx}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quantx}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   # ── serviço ML (Python / FastAPI) ─────────────────────────────────────────
   ml:
     build:
@@ -37,12 +27,10 @@ services:
     restart: unless-stopped
     environment:
       MODEL_DIR: /models
+      SUPABASE_URL:              ${SUPABASE_URL:?SUPABASE_URL is required}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}
     volumes:
       - model_weights:/models:ro
-      - page_images:/tmp/quantx-pages
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -57,24 +45,22 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      NODE_ENV:        production
-      PORT:            3000
-      HOST:            0.0.0.0
-      REDIS_URL:       redis://redis:6379
-      ML_BASE_URL:     http://ml:8000
-      DATABASE_URL:    postgres://${POSTGRES_USER:-quantx}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quantx}
-      UPLOAD_DIR:      /tmp/quantx-pages
-      MODEL_VERSION:   ${MODEL_VERSION:-yolov15-spci-2026.04}
-      RENDER_DPI:      ${RENDER_DPI:-150}
+      NODE_ENV:                  production
+      PORT:                      3000
+      HOST:                      0.0.0.0
+      REDIS_URL:                 redis://redis:6379
+      ML_BASE_URL:               http://ml:8000
+      DATABASE_URL:              ${DATABASE_URL:?DATABASE_URL is required}
+      SUPABASE_URL:              ${SUPABASE_URL:?SUPABASE_URL is required}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}
+      MODEL_VERSION:             ${MODEL_VERSION:-yolov15-spci-2026.04}
+      RENDER_DPI:                ${RENDER_DPI:-150}
     volumes:
-      - page_images:/tmp/quantx-pages
       - telemetry:/tmp/quantx-telemetry
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     depends_on:
       redis:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
       ml:
         condition: service_healthy
@@ -86,7 +72,5 @@ services:
 
 volumes:
   redis_data:
-  postgres_data:
   model_weights:
-  page_images:
   telemetry:

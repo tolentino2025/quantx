@@ -2,9 +2,6 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
 import { Redis } from 'ioredis';
 import { randomUUID } from 'crypto';
-import { createWriteStream, mkdirSync } from 'fs';
-import { join } from 'path';
-import { pipeline } from 'stream/promises';
 import {
   createRecognitionQueue,
   createRecognitionWorker,
@@ -13,17 +10,28 @@ import {
 } from '../workers/recognition-worker.js';
 import { MLClient } from '../workers/ml-client.js';
 import { dbHealthCheck } from '../db/pool.js';
-import { createPlan, getPlan, updatePlanStatus, listPlansByTenant } from '../db/repositories/plans.js';
+import { createPlan, updatePlanStatus, listPlansByTenant } from '../db/repositories/plans.js';
+import { createPlanPages } from '../db/repositories/plan-pages.js';
+import { uploadBuffer, getSignedUrl, ensureBuckets, BUCKETS } from '../storage/supabase-storage.js';
 
 // ── env ───────────────────────────────────────────────────────────────────────
 
-const ML_BASE_URL  = process.env.ML_BASE_URL  ?? 'http://localhost:8000';
-const REDIS_URL    = process.env.REDIS_URL    ?? 'redis://localhost:6379';
-const PORT         = Number(process.env.PORT  ?? 3000);
-const HOST         = process.env.HOST         ?? '0.0.0.0';
-const UPLOAD_DIR   = process.env.UPLOAD_DIR   ?? '/tmp/quantx-pages';
+const ML_BASE_URL   = process.env.ML_BASE_URL   ?? 'http://localhost:8000';
+const REDIS_URL     = process.env.REDIS_URL     ?? 'redis://localhost:6379';
+const PORT          = Number(process.env.PORT   ?? 3000);
+const HOST          = process.env.HOST          ?? '0.0.0.0';
 const MODEL_VERSION = process.env.MODEL_VERSION ?? 'yolov15-spci-2026.04';
-const RENDER_DPI   = Number(process.env.RENDER_DPI ?? 150);
+const RENDER_DPI    = Number(process.env.RENDER_DPI ?? 150);
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+async function streamToBuffer(readable: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of readable) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+  }
+  return Buffer.concat(chunks);
+}
 
 // ── app factory ───────────────────────────────────────────────────────────────
 
@@ -62,7 +70,7 @@ export async function buildApp(opts: {
     };
   });
 
-  // ── POST /plans — upload PDF, render pages, queue all recognition jobs ───────
+  // ── POST /plans — upload PDF → Supabase Storage → render → queue jobs ───────
 
   app.post('/plans', async (request, reply) => {
     const data = await request.file();
@@ -75,28 +83,46 @@ export async function buildApp(opts: {
       return { error: 'invalid_file_type', detail: 'Apenas arquivos PDF são aceitos' };
     }
 
-    const tenantId     = (request.query as Record<string, string>).tenant_id ?? 'default';
-    const planId       = randomUUID();
-    const planDir      = join(UPLOAD_DIR, planId);
-    const pdfPath      = join(planDir, 'original.pdf');
+    const tenantId = (request.query as Record<string, string>).tenant_id ?? 'default';
+    const planId   = randomUUID();
 
-    mkdirSync(planDir, { recursive: true });
-    await pipeline(data.file, createWriteStream(pdfPath));
+    // Buffer upload in memory (max 200 MB as enforced by multipart limit)
+    const pdfBuffer = await streamToBuffer(data.file);
 
-    // Persiste o plano no banco antes de qualquer processamento
+    // Upload original PDF to Supabase Storage
+    const pdfStoragePath = `${tenantId}/${planId}/original.pdf`;
+    try {
+      await uploadBuffer(BUCKETS.PLANS_ORIGINAL, pdfStoragePath, pdfBuffer, 'application/pdf');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      reply.code(502);
+      return { error: 'storage_upload_failed', detail: msg };
+    }
+
+    // Persist plan record
     await createPlan({ plan_id: planId, tenant_id: tenantId, file_name: data.filename }).catch(() => null);
 
-    // Render PDF pages via ML service
-    let renderResult: { page_count: number; image_paths: string[] };
+    // Generate short-lived signed URL for ML service to download the PDF
+    let pdfSignedUrl: string;
+    try {
+      pdfSignedUrl = await getSignedUrl(BUCKETS.PLANS_ORIGINAL, pdfStoragePath, 600); // 10 min
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      reply.code(502);
+      return { error: 'storage_sign_failed', detail: msg };
+    }
+
+    // Ask ML service to render pages and upload them to Supabase Storage
+    let renderResult: { page_count: number; storage_paths: string[] };
     try {
       const res = await fetch(`${mlBaseUrl}/render-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           plan_id: planId,
-          pdf_path: pdfPath,
+          tenant_id: tenantId,
+          pdf_url: pdfSignedUrl,
           dpi: RENDER_DPI,
-          output_dir: UPLOAD_DIR,
         }),
         signal: AbortSignal.timeout(120_000),
       });
@@ -112,14 +138,24 @@ export async function buildApp(opts: {
       return { error: 'render_failed', detail: `ML service unreachable: ${msg}` };
     }
 
+    // Persist plan_pages records (one per rendered page)
+    await createPlanPages(
+      renderResult.storage_paths.map((sp, i) => ({
+        plan_id: planId,
+        tenant_id: tenantId,
+        page_number: i + 1,
+        storage_path: sp,
+      })),
+    ).catch(() => null);
+
     // Queue one recognition job per page
     const jobs = await Promise.all(
-      renderResult.image_paths.map((imagePath, i) => {
+      renderResult.storage_paths.map((storagePath, i) => {
         const jobData: RecognitionJobData = {
           plan_id: planId,
           page_number: i + 1,
           tenant_id: tenantId,
-          image_path: imagePath,
+          storage_path: storagePath,
           model_version: MODEL_VERSION,
           tenant_library_size: 0,
         };
@@ -142,7 +178,7 @@ export async function buildApp(opts: {
   interface RecognizeBody {
     page_number: number;
     tenant_id: string;
-    image_path: string;
+    storage_path: string;
     model_version: string;
     tenant_library_size?: number;
     audit_mode?: boolean;
@@ -160,11 +196,11 @@ export async function buildApp(opts: {
         },
         body: {
           type: 'object',
-          required: ['page_number', 'tenant_id', 'image_path', 'model_version'],
+          required: ['page_number', 'tenant_id', 'storage_path', 'model_version'],
           properties: {
             page_number:          { type: 'integer', minimum: 1 },
             tenant_id:            { type: 'string', minLength: 1 },
-            image_path:           { type: 'string', minLength: 1 },
+            storage_path:         { type: 'string', minLength: 1 },
             model_version:        { type: 'string', minLength: 1 },
             tenant_library_size:  { type: 'integer', minimum: 0 },
             audit_mode:           { type: 'boolean' },
@@ -181,7 +217,7 @@ export async function buildApp(opts: {
         plan_id,
         page_number: body.page_number,
         tenant_id: body.tenant_id,
-        image_path: body.image_path,
+        storage_path: body.storage_path,
         model_version: body.model_version,
         tenant_library_size: body.tenant_library_size ?? 0,
         audit_mode: body.audit_mode,
@@ -235,7 +271,7 @@ export async function buildApp(opts: {
         page_number: job.data.page_number,
         state,
         progress,
-        ...(result      ? { result }       : {}),
+        ...(result       ? { result }              : {}),
         ...(failedReason ? { error: failedReason } : {}),
         attempts_made: job.attemptsMade,
         created_at: new Date(job.timestamp).toISOString(),
@@ -243,7 +279,7 @@ export async function buildApp(opts: {
     },
   );
 
-  // ── GET /plans — list plans for a tenant ──────────────────────────────────
+  // ── GET /plans — list plans for a tenant ───────────────────────────────────
 
   app.get('/plans', async (request, reply) => {
     const { tenant_id, limit, offset } = request.query as Record<string, string>;
@@ -253,7 +289,7 @@ export async function buildApp(opts: {
     }
     const rows = await listPlansByTenant(
       tenant_id,
-      limit ? Number(limit) : 20,
+      limit  ? Number(limit)  : 20,
       offset ? Number(offset) : 0,
     );
     return { tenant_id, plans: rows, count: rows.length };
@@ -266,7 +302,6 @@ export async function buildApp(opts: {
     async (request, reply) => {
       const { plan_id } = request.params;
 
-      // BullMQ doesn't store job→plan mapping natively; we query by naming convention
       const jobList = await queue.getJobs(['waiting', 'active', 'completed', 'failed', 'delayed']);
       const planJobs = jobList.filter((j) => j.data?.plan_id === plan_id);
 
@@ -299,12 +334,7 @@ export async function buildApp(opts: {
         await updatePlanStatus(plan_id, derivedStatus as 'completed' | 'partial').catch(() => null);
       }
 
-      return {
-        plan_id,
-        page_count: pages.length,
-        status: derivedStatus,
-        pages,
-      };
+      return { plan_id, page_count: pages.length, status: derivedStatus, pages };
     },
   );
 
