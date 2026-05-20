@@ -39,6 +39,34 @@ vi.mock('../recognition/pipeline.js', () => {
   return { RecognitionPipeline };
 });
 
+vi.mock('fs/promises', () => ({
+  writeFile: vi.fn().mockResolvedValue(undefined),
+  rm: vi.fn().mockResolvedValue(undefined),
+  mkdir: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../db/repositories/detections.js', () => ({
+  saveDetections: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../db/repositories/plans.js', () => ({
+  updatePlanStatus: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../db/repositories/plan-pages.js', () => ({
+  updatePageStatus: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../storage/supabase-storage.js', () => ({
+  BUCKETS: {
+    PLANS_ORIGINAL: 'plans-original',
+    PLANS_PAGES: 'plans-pages',
+    PLANS_PROCESSED: 'plans-processed',
+  },
+  downloadBuffer: vi.fn().mockResolvedValue(Buffer.from('fake-png')),
+  uploadBuffer: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { createRecognitionWorker, createRecognitionQueue, RECOGNITION_QUEUE_NAME } from './recognition-worker.js';
 import { Worker, Queue } from 'bullmq';
 import { RecognitionPipeline } from '../recognition/pipeline.js';
@@ -87,7 +115,7 @@ describe('createRecognitionWorker', () => {
         plan_id: 'plan-1',
         page_number: 1,
         tenant_id: 'tenant-1',
-        image_path: '/tmp/page.png',
+        storage_path: 'tenant-1/plan-1/page-001.png',
         model_version: 'yolov15-spci-2026.04',
         tenant_library_size: 0,
       },
@@ -104,7 +132,7 @@ describe('createRecognitionWorker', () => {
         plan_id: 'plan-1',
         page_number: 1,
         tenant_id: 'tenant-1',
-        image_path: '/tmp/page.png',
+        image_path: expect.stringContaining('page-001.png'),
       }),
     );
     expect(result.plan_id).toBe('plan-1');
@@ -121,7 +149,7 @@ describe('createRecognitionWorker', () => {
         plan_id: 'plan-1',
         page_number: 1,
         tenant_id: 'tenant-1',
-        image_path: '/tmp/page.png',
+        storage_path: 'tenant-1/plan-1/page-001.png',
         model_version: 'yolov15-spci-2026.04',
         tenant_library_size: 0,
       },

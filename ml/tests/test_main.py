@@ -428,75 +428,85 @@ class TestDINOv2DeleteClass:
 
 
 class TestRenderPDFEndpoint:
+    """
+    /render-pdf agora baixa o PDF via signed URL e faz upload das páginas
+    para o Supabase Storage. Os testes mockam httpx.get (download),
+    convert_from_path (render) e os helpers de storage.
+    """
+
     def _fake_pages(self, n=3):
         return [Image.new("RGB", (2480, 3508), color=(255, 255, 255)) for _ in range(n)]
 
-    def test_returns_404_when_pdf_missing(self, tmp_path):
-        res = client.post("/render-pdf", json={
-            "plan_id": str(uuid4()),
-            "pdf_path": "/nonexistent/file.pdf",
-            "output_dir": str(tmp_path),
-        })
-        assert res.status_code == 404
+    def _fake_pdf_response(self):
+        resp = MagicMock()
+        resp.content = b"%PDF-1.4 fake"
+        resp.raise_for_status = MagicMock()
+        return resp
 
-    def test_returns_page_count_and_paths(self, tmp_path):
+    def test_returns_502_when_pdf_download_fails(self):
+        import httpx
+        with patch("main.httpx.get", side_effect=httpx.HTTPError("connection refused")):
+            res = client.post("/render-pdf", json={
+                "plan_id": str(uuid4()),
+                "tenant_id": "tenant-1",
+                "pdf_url": "https://signed.example/missing.pdf",
+            })
+        assert res.status_code == 502
+
+    def test_returns_page_count_and_storage_paths(self):
         plan_id = str(uuid4())
-        fake_pdf = tmp_path / "plan.pdf"
-        fake_pdf.write_bytes(b"%PDF-1.4 fake")
-
-        with patch("main.convert_from_path", return_value=self._fake_pages(3)):
+        with patch("main.httpx.get", return_value=self._fake_pdf_response()), \
+             patch("main.convert_from_path", return_value=self._fake_pages(3)), \
+             patch("main._storage_ensure_bucket"), \
+             patch("main._storage_upload"):
             res = client.post("/render-pdf", json={
                 "plan_id": plan_id,
-                "pdf_path": str(fake_pdf),
-                "output_dir": str(tmp_path),
+                "tenant_id": "tenant-1",
+                "pdf_url": "https://signed.example/plan.pdf",
             })
 
         assert res.status_code == 200
         body = res.json()
         assert body["page_count"] == 3
-        assert len(body["image_paths"]) == 3
+        assert len(body["storage_paths"]) == 3
         assert body["plan_id"] == plan_id
 
-    def test_image_paths_are_sequential(self, tmp_path):
-        fake_pdf = tmp_path / "plan.pdf"
-        fake_pdf.write_bytes(b"%PDF-1.4 fake")
-
-        with patch("main.convert_from_path", return_value=self._fake_pages(2)):
+    def test_storage_paths_are_sequential_and_tenant_scoped(self):
+        with patch("main.httpx.get", return_value=self._fake_pdf_response()), \
+             patch("main.convert_from_path", return_value=self._fake_pages(2)), \
+             patch("main._storage_ensure_bucket"), \
+             patch("main._storage_upload"):
             res = client.post("/render-pdf", json={
                 "plan_id": "plan-test",
-                "pdf_path": str(fake_pdf),
-                "output_dir": str(tmp_path),
+                "tenant_id": "tenant-9",
+                "pdf_url": "https://signed.example/plan.pdf",
             })
 
-        paths = res.json()["image_paths"]
-        assert paths[0].endswith("page-001.png")
-        assert paths[1].endswith("page-002.png")
+        paths = res.json()["storage_paths"]
+        assert paths[0] == "tenant-9/plan-test/page-001.png"
+        assert paths[1] == "tenant-9/plan-test/page-002.png"
 
-    def test_returns_503_when_poppler_missing(self, tmp_path):
+    def test_returns_503_when_poppler_missing(self):
         from pdf2image.exceptions import PDFInfoNotInstalledError
-        fake_pdf = tmp_path / "plan.pdf"
-        fake_pdf.write_bytes(b"%PDF-1.4 fake")
-
-        with patch("main.convert_from_path", side_effect=PDFInfoNotInstalledError()):
+        with patch("main.httpx.get", return_value=self._fake_pdf_response()), \
+             patch("main.convert_from_path", side_effect=PDFInfoNotInstalledError()):
             res = client.post("/render-pdf", json={
                 "plan_id": str(uuid4()),
-                "pdf_path": str(fake_pdf),
-                "output_dir": str(tmp_path),
+                "tenant_id": "tenant-1",
+                "pdf_url": "https://signed.example/plan.pdf",
             })
 
         assert res.status_code == 503
         assert "poppler" in res.json()["detail"].lower()
 
-    def test_returns_422_for_corrupt_pdf(self, tmp_path):
+    def test_returns_422_for_corrupt_pdf(self):
         from pdf2image.exceptions import PDFPageCountError
-        fake_pdf = tmp_path / "plan.pdf"
-        fake_pdf.write_bytes(b"not a pdf")
-
-        with patch("main.convert_from_path", side_effect=PDFPageCountError("bad pdf")):
+        with patch("main.httpx.get", return_value=self._fake_pdf_response()), \
+             patch("main.convert_from_path", side_effect=PDFPageCountError("bad pdf")):
             res = client.post("/render-pdf", json={
                 "plan_id": str(uuid4()),
-                "pdf_path": str(fake_pdf),
-                "output_dir": str(tmp_path),
+                "tenant_id": "tenant-1",
+                "pdf_url": "https://signed.example/plan.pdf",
             })
 
         assert res.status_code == 422

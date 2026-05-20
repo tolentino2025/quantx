@@ -54,6 +54,37 @@ vi.mock('../recognition/pipeline.js', () => {
   return { RecognitionPipeline };
 });
 
+vi.mock('../db/pool.js', () => ({
+  dbHealthCheck: vi.fn().mockResolvedValue(true),
+  pool: {},
+}));
+
+vi.mock('../db/repositories/plans.js', () => ({
+  createPlan: vi.fn().mockResolvedValue(null),
+  updatePlanStatus: vi.fn().mockResolvedValue(undefined),
+  listPlansByTenant: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../db/repositories/plan-pages.js', () => ({
+  createPlanPages: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../db/repositories/detections.js', () => ({
+  saveDetections: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../storage/supabase-storage.js', () => ({
+  BUCKETS: {
+    PLANS_ORIGINAL: 'plans-original',
+    PLANS_PAGES: 'plans-pages',
+    PLANS_PROCESSED: 'plans-processed',
+  },
+  uploadBuffer: vi.fn().mockResolvedValue(undefined),
+  downloadBuffer: vi.fn().mockResolvedValue(Buffer.from('')),
+  getSignedUrl: vi.fn().mockResolvedValue('https://signed.example/pdf'),
+  ensureBuckets: vi.fn().mockResolvedValue({ created: [], existing: [] }),
+}));
+
 import { buildApp } from './server.js';
 import type { FastifyInstance } from 'fastify';
 import { Queue } from 'bullmq';
@@ -63,7 +94,7 @@ import { Queue } from 'bullmq';
 const VALID_BODY = {
   page_number: 1,
   tenant_id: 'tenant-1',
-  image_path: '/tmp/page.png',
+  storage_path: 'tenant-1/plan-1/page-001.png',
   model_version: 'yolov15-spci-2026.04',
 };
 
@@ -130,7 +161,7 @@ describe('API server', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/plans/plan-1/recognize',
-      payload: { page_number: 1, tenant_id: 'tenant-1' }, // missing image_path and model_version
+      payload: { page_number: 1, tenant_id: 'tenant-1' }, // missing storage_path and model_version
     });
     expect(res.statusCode).toBe(400);
   });
