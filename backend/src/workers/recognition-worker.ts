@@ -26,7 +26,7 @@ export interface RecognitionJobResult {
   duration_ms: number;
 }
 
-export const RECOGNITION_QUEUE_NAME = 'recognition:plan';
+export const RECOGNITION_QUEUE_NAME = 'recognition-plan';
 
 export function createRecognitionQueue(connection: Redis): Queue<RecognitionJobData, RecognitionJobResult> {
   return new Queue(RECOGNITION_QUEUE_NAME, {
