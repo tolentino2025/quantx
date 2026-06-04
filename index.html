@@ -355,6 +355,8 @@
   }
   .ps-list li .icn { color: var(--danger); margin-top: 3px; }
   .solution .ps-list li .icn { color: var(--success); }
+  .ps-list li .ps-txt { min-width: 0; }
+  .ps-list li strong { color: var(--text); font-weight: 600; }
   @media (max-width: 780px) {
     .ps-grid { grid-template-columns: 1fr; }
     .ps-col + .ps-col { border-left: none; border-top: 1px solid var(--border); }
@@ -427,6 +429,20 @@
     display: grid; place-items: center; margin-top: 2px;
   }
   html[data-theme="light"] .tab-copy li .bullet { color: var(--indigo-2); }
+  .tab-note {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 14px 16px; margin: -4px 0 26px;
+    background: var(--indigo-soft);
+    border: 1px solid rgba(99,102,241,0.28);
+    border-radius: 10px;
+  }
+  .tab-note .tn-ico { color: var(--indigo); flex-shrink: 0; margin-top: 1px; }
+  html[data-theme="light"] .tab-note .tn-ico { color: var(--indigo-2); }
+  .tab-note .tn-body { font-size: 13.5px; color: var(--text-dim); line-height: 1.5; }
+  .tab-note .tn-body strong {
+    display: block; margin-bottom: 3px; color: var(--text);
+    font-weight: 600; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase;
+  }
   .tab-visual {
     background: var(--bg-2);
     border-left: 1px solid var(--border);
@@ -476,6 +492,51 @@
   .step p {
     margin: 0; color: var(--text-dim); font-size: 14.5px; line-height: 1.55;
   }
+
+  /* ─── IA Legend recognition ─── */
+  .ialeg .section-title .grad {
+    background: linear-gradient(100deg, var(--text) 20%, var(--indigo) 65%, var(--amber) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .ialeg-flow {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px;
+    max-width: 1120px; margin: 0 auto; align-items: start;
+  }
+  @media (max-width: 920px) { .ialeg-flow { grid-template-columns: 1fr; max-width: 460px; } }
+  .ialeg-step { display: flex; flex-direction: column; }
+  .ialeg-shot {
+    border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+    background: var(--surface); box-shadow: var(--shadow-2);
+  }
+  .ialeg-shot.light { background: #fff; }
+  .ialeg-shot img { width: 100%; height: auto; display: block; }
+  .ialeg-cap { display: grid; grid-template-columns: auto 1fr; gap: 14px; margin-top: 22px; }
+  .ialeg-n {
+    width: 34px; height: 34px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 9px; font-size: 13px; font-weight: 600;
+    color: var(--indigo); background: var(--indigo-soft);
+    border: 1px solid var(--border);
+  }
+  html[data-theme="light"] .ialeg-n { color: var(--indigo-2); }
+  .ialeg-cap h4 { margin: 4px 0 5px; font-size: 16.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .ialeg-cap p { margin: 0; font-size: 14px; color: var(--text-mute); line-height: 1.55; }
+  .ialeg-bens {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+    max-width: 1120px; margin: 60px auto 0;
+  }
+  @media (max-width: 920px) { .ialeg-bens { grid-template-columns: 1fr; max-width: 460px; } }
+  .ialeg-ben {
+    padding: 28px; border: 1px solid var(--border);
+    border-radius: var(--radius-lg); background: var(--surface);
+  }
+  .ialeg-ben-stat {
+    font-size: 30px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 8px;
+    background: linear-gradient(100deg, var(--indigo), var(--amber));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .ialeg-ben p { margin: 0; font-size: 14.5px; color: var(--text-dim); line-height: 1.55; }
 
   /* ─── Testimonials ─── */
   .testimonials-grid {
@@ -957,7 +1018,9 @@
           </div>
           <div style="width:60px"></div>
         </div>
-        <div class="browser-body" id="hero-mock"></div>
+        <div class="browser-body" style="aspect-ratio:2932/1512">
+          <img src="assets/hero-takeoff.png" alt="QuantX — takeoff de projeto de proteção contra incêndio" style="display:block;width:100%;height:100%;object-fit:cover;object-position:center">
+        </div>
       </div>
     </div>
 
@@ -970,6 +1033,65 @@
       </span>
       Usado por <strong style="color:var(--text);font-weight:500">+500 engenheiros</strong> em todo o Brasil
     </p>
+  </div>
+</section>
+
+<!-- ═══════════════ IA — LEITURA DE LEGENDA ═══════════════ -->
+<section class="section ialeg" id="ia-legenda">
+  <div class="wrap">
+    <div class="section-head fade-in">
+      <div class="kicker">Reconhecimento por IA</div>
+      <h2 class="section-title">Sua legenda vira itens de medição <span class="grad">em segundos.</span></h2>
+      <p class="section-lede">Tire um print da tabela de símbolos do projeto e faça o upload. A IA lê cada símbolo, identifica o que ele representa e já sugere o tipo de medição — contagem, área ou linear. Você revisa, aceita e começa o takeoff sem cadastrar nada à mão.</p>
+    </div>
+
+    <div class="ialeg-flow fade-in">
+      <div class="ialeg-step">
+        <div class="ialeg-shot"><img src="assets/ia-legenda-app.png" alt="Itens reconhecidos prontos na lista de levantamentos do QuantX"></div>
+        <div class="ialeg-cap">
+          <span class="ialeg-n">01</span>
+          <div>
+            <h4>Itens prontos no projeto</h4>
+            <p>Os símbolos entram direto na lista de levantamentos. É só selecionar e medir sobre o PDF.</p>
+          </div>
+        </div>
+      </div>
+      <div class="ialeg-step">
+        <div class="ialeg-shot light"><img src="assets/ia-legenda-upload.png" alt="Upload do print da legenda do projeto"></div>
+        <div class="ialeg-cap">
+          <span class="ialeg-n">02</span>
+          <div>
+            <h4>Faça upload da legenda</h4>
+            <p>Arraste o print da tabela de símbolos. Funciona com legendas em qualquer padrão — NFPA, ABNT ou do seu escritório.</p>
+          </div>
+        </div>
+      </div>
+      <div class="ialeg-step">
+        <div class="ialeg-shot light"><img src="assets/ia-legenda-resultados.png" alt="A IA identifica os símbolos e sugere os itens de medição"></div>
+        <div class="ialeg-cap">
+          <span class="ialeg-n">03</span>
+          <div>
+            <h4>A IA identifica os símbolos</h4>
+            <p>Cada item já vem nomeado, categorizado e com a unidade de medição sugerida. Desmarque o que não usar em um clique.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ialeg-bens fade-in">
+      <div class="ialeg-ben">
+        <div class="ialeg-ben-stat">Segundos</div>
+        <p>Para mapear uma legenda inteira. O cadastro manual, item a item, que levava meia hora, acabou.</p>
+      </div>
+      <div class="ialeg-ben">
+        <div class="ialeg-ben-stat">10+ itens</div>
+        <p>Reconhecidos de uma só vez, cada um com nome, categoria e unidade de medição já preenchidos.</p>
+      </div>
+      <div class="ialeg-ben">
+        <div class="ialeg-ben-stat">Zero</div>
+        <p>Configuração manual. A padronização dos itens entre pranchas e projetos passa a ser automática.</p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -992,22 +1114,22 @@
     <div class="ps-grid fade-in">
       <div class="ps-col problem">
         <span class="ps-tag problem">⚠ Hoje</span>
-        <h3>Processo manual em Excel</h3>
+        <h3>Processo manual em planilhas</h3>
         <ul class="ps-list">
-          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></span>Quantificação manual leva <strong style="color:var(--text)">2 a 3 dias</strong> por projeto de porte médio.</li>
-          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></span>Erros de medição podem custar até <strong style="color:var(--text)">15% do orçamento</strong> da obra.</li>
-          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></span>Cada revisão do projeto obriga refazer medições do zero.</li>
-          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></span>Sem rastreabilidade: ninguém sabe quem mediu o quê, nem quando.</li>
+          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></span><span class="ps-txt">Quantificar à mão consome de <strong>2 a 3 dias</strong> por projeto de porte médio.</span></li>
+          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></span><span class="ps-txt">Um erro de medição pode comprometer até <strong>15% do orçamento</strong> da obra.</span></li>
+          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></span><span class="ps-txt">A cada revisão do projeto, é preciso <strong>refazer as medições do zero</strong>.</span></li>
+          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg></span><span class="ps-txt">Sem rastreabilidade: ninguém sabe quem mediu o quê, nem quando.</span></li>
         </ul>
       </div>
       <div class="ps-col solution">
         <span class="ps-tag solution">✓ Com QuantX</span>
         <h3>Takeoff visual sobre o PDF</h3>
         <ul class="ps-list">
-          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg></span>Takeoff completo em <strong style="color:var(--text)">2 a 4 horas</strong> com ferramentas visuais sobre o PDF.</li>
-          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg></span>Medições calibradas com <strong style="color:var(--text)">escala verificada automaticamente</strong>.</li>
-          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg></span>Revisão cirúrgica: remova e redesenhe só o que mudou entre versões.</li>
-          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg></span>Histórico completo de alterações com <strong style="color:var(--text)">audit trail</strong>.</li>
+          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg></span><span class="ps-txt">Takeoff completo em <strong>2 a 4 horas</strong>, medindo direto sobre o PDF.</span></li>
+          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg></span><span class="ps-txt">Escala <strong>calibrada e verificada automaticamente</strong> em cada medição.</span></li>
+          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg></span><span class="ps-txt">Revisão cirúrgica: refaça <strong>só o que mudou</strong> entre versões.</span></li>
+          <li><span class="icn"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg></span><span class="ps-txt">Histórico completo de alterações, com <strong>audit trail por usuário</strong>.</span></li>
         </ul>
       </div>
     </div>
@@ -1363,8 +1485,7 @@ document.getElementById('logos-grid').innerHTML = brandNames.map((b,i) =>
   `<div class="fake-logo">${logoIcons[i]}<span>${b.name}${b.sub ? ' <span style="opacity:.6;font-weight:400">'+b.sub+'</span>' : ''}</span></div>`
 ).join('');
 
-/* ───── Hero product mockup (SVG floor plan) ───── */
-document.getElementById('hero-mock').innerHTML = heroMockSVG();
+/* ───── Hero product mockup (SVG floor plan) — substituído por imagem real (assets/hero-takeoff.png) ───── */
 function heroMockSVG() {
   return `
   <div style="position:absolute;inset:0;display:grid;grid-template-columns:56px 1fr 260px;grid-template-rows:40px 1fr 28px">
@@ -1604,6 +1725,10 @@ const tabContent = [
       ['1 clique para confirmar', 'o engenheiro tem sempre a palavra final.'],
       ['Aprende com correções', 'erros viram dados de treinamento do seu projeto.'],
     ],
+    note: {
+      title: 'Em desenvolvimento · acesso antecipado',
+      text: 'Estamos nos ajustes finais do reconhecimento por IA. Quem já é cliente entra na frente: acesso liberado no lançamento, sem fila e sem custo extra.',
+    },
     visual: 'ai',
   },
   {
@@ -1650,6 +1775,10 @@ function panelHTML(t, idx) {
       <ul>
         ${t.bullets.map(([s, rest]) => `<li><span class="bullet"><svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg></span><span><strong>${s}</strong> — ${rest}</span></li>`).join('')}
       </ul>
+      ${t.note ? `<div class="tab-note">
+        <span class="tn-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.85 6.35L20 10.5l-6.15 2.15L12 19l-1.85-6.35L4 10.5l6.15-2.15z"/></svg></span>
+        <div class="tn-body"><strong>${t.note.title}</strong>${t.note.text}</div>
+      </div>` : ''}
       <a href="#" style="color:var(--indigo); font-size:14px; font-weight:500; display:inline-flex; align-items:center; gap:6px">Saiba mais <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h6M7 4l2 2-2 2"/></svg></a>
     </div>
     <div class="tab-visual">${visualFor(t.visual)}</div>
@@ -1657,7 +1786,7 @@ function panelHTML(t, idx) {
 }
 function visualFor(kind) {
   if (kind === 'editor') {
-    return `<div style="width:100%;height:100%;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:#F8F8F2;position:relative;min-height:400px">${floorPlanSVG()}</div>`;
+    return `<img src="assets/feature-takeoff.png" alt="Editor de takeoff visual do QuantX com medições lineares sobre o PDF" style="width:100%;height:100%;min-height:420px;object-fit:cover;object-position:center;border-radius:10px;border:1px solid var(--border);box-shadow:var(--shadow-2);background:#fff;display:block">`;
   }
   if (kind === 'boq') {
     return `<div style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;min-height:400px">
@@ -1682,7 +1811,7 @@ function visualFor(kind) {
   }
   if (kind === 'ai') {
     return `<div style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;min-height:400px;display:grid;grid-template-columns:1fr 220px">
-      <div style="position:relative;background:#F8F8F2;overflow:hidden">${floorPlanSVG()}</div>
+      <div style="position:relative;background:#fff;overflow:hidden"><img src="assets/feature-ia.png" alt="Detecção de sprinklers e dispositivos por IA sobre a planta de incêndio" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;display:block"></div>
       <div style="padding:16px;background:var(--surface-2);border-left:1px solid var(--border);overflow:hidden">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-mute);margin-bottom:12px">Detecções · IA</div>
         ${aiRow('Sprinkler pendente', 48, 96)}
@@ -1694,27 +1823,7 @@ function visualFor(kind) {
     </div>`;
   }
   if (kind === 'annotate') {
-    return `<div style="width:100%;height:100%;min-height:400px;position:relative;background:#F8F8F2;border-radius:10px;border:1px solid var(--border);overflow:hidden">
-      ${floorPlanSVG()}
-      <!-- Cloud of revision -->
-      <svg style="position:absolute;top:18%;left:45%;width:22%" viewBox="0 0 160 80">
-        <path d="M10 40 Q 5 25, 20 20 Q 25 5, 45 10 Q 60 0, 75 10 Q 95 2, 110 15 Q 135 10, 145 28 Q 160 45, 145 60 Q 140 78, 115 72 Q 95 82, 75 72 Q 55 80, 35 70 Q 10 75, 10 55 Q 0 50, 10 40 Z" fill="none" stroke="#F59E0B" stroke-width="2" stroke-dasharray="1 0"/>
-      </svg>
-      <!-- Callout pin -->
-      <div style="position:absolute;top:55%;left:22%;display:flex;gap:10px;align-items:flex-start">
-        <div style="width:24px;height:24px;border-radius:50%;background:#E05260;color:white;display:grid;place-items:center;font-size:11px;font-weight:600;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.2)">2</div>
-        <div style="background:white;border:1px solid #ddd;border-radius:8px;padding:10px 12px;max-width:200px;font-size:12px;color:#222;box-shadow:0 4px 16px rgba(0,0,0,.1)">
-          <div style="font-weight:500;margin-bottom:4px">@camila.moraes</div>
-          <div style="color:#555">Revisar diâmetro da tubulação no trecho entre ramais. Dimensionamento abaixo do IT-23.</div>
-          <div style="margin-top:6px;font-size:10px;color:#999;font-family:'Geist Mono',monospace">há 14 min · aberto</div>
-        </div>
-      </div>
-      <!-- arrow -->
-      <svg style="position:absolute;top:35%;left:62%;width:20%;height:20%" viewBox="0 0 100 80">
-        <defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6366F1"/></marker></defs>
-        <path d="M 5 70 Q 40 10, 90 25" fill="none" stroke="#6366F1" stroke-width="2" marker-end="url(#arr)"/>
-      </svg>
-    </div>`;
+    return `<img src="assets/feature-anotacoes.png" alt="Anotação de revisão sobre a planta — marcação para troca de tipo de sprinkler" style="width:100%;height:100%;min-height:420px;object-fit:cover;object-position:center;border-radius:10px;border:1px solid var(--border);box-shadow:var(--shadow-2);background:#fff;display:block">`;
   }
   if (kind === 'templates') {
     const tpls = [
