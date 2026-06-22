@@ -1298,12 +1298,12 @@
     <div class="section-head fade-in">
       <div class="kicker">Planos</div>
       <h2 class="section-title">Preço justo. Sem surpresas.</h2>
-      <p class="section-lede">Comece grátis, evolua conforme seus projetos crescem. Cancele quando quiser.</p>
+      <p class="section-lede">Comece grátis, evolua conforme seus projetos crescem. Cancele quando quiser.</p> <p style="text-align:center;margin-top:6px"><a href="https://app.quantx.com.br/planos" style="color:var(--amber);text-decoration:underline;font-size:14px">Ver todos os planos (incl. Equipe) →</a></p>
     </div>
     <div style="text-align:center">
       <div class="price-toggle fade-in" role="tablist">
         <button class="active" data-billing="monthly">Mensal</button>
-        <button data-billing="yearly">Anual <span class="save-tag">−20%</span></button>
+        <button data-billing="yearly">Anual <span class="save-tag">−17%</span></button>
       </div>
     </div>
     <div class="plans fade-in">
@@ -1312,7 +1312,7 @@
         <div class="plan-name">Starter</div>
         <div class="plan-price"><span class="amount">R$ 0</span><span class="per">/mês</span></div>
         <p class="plan-desc">Para começar e entender a ferramenta.</p>
-        <a href="#" class="btn btn-outline">Criar conta grátis</a>
+        <a href="https://app.quantx.com.br/auth" class="btn btn-outline">Criar conta grátis</a>
         <ul>
           <li><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg><span><strong>2 projetos</strong> ativos simultâneos</span></li>
           <li><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg><span>PDF até <strong>50 páginas</strong></span></li>
@@ -1325,11 +1325,11 @@
         <div class="plan-badge">Mais popular</div>
         <div class="plan-name" style="color:var(--amber)">Pro</div>
         <div class="plan-price">
-          <span class="amount" data-price-monthly="R$ 149" data-price-yearly="R$ 119">R$ 149</span>
+          <span class="amount" data-price-monthly="R$ 149,90" data-price-yearly="R$ 124,90">R$ 149,90</span>
           <span class="per">/mês</span>
         </div>
-        <p class="plan-desc" data-sub-monthly="Cobrado mensalmente. Cancele a qualquer hora." data-sub-yearly="R$ 1.428 cobrados anualmente.">Cobrado mensalmente. Cancele a qualquer hora.</p>
-        <a href="#" class="btn btn-primary">Começar trial de 14 dias</a>
+        <p class="plan-desc" data-sub-monthly="Cobrado mensalmente. Cancele a qualquer hora." data-sub-yearly="R$ 1.499 cobrados anualmente (economize ~17%).">Cobrado mensalmente. Cancele a qualquer hora.</p>
+        <a href="https://app.quantx.com.br/auth?plan=pro&amp;billing=yearly&amp;next=checkout" class="btn btn-primary" id="cta-pro">Assinar Pro</a>
         <ul>
           <li><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg><span><strong>Projetos ilimitados</strong></span></li>
           <li><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg><span>PDF e páginas ilimitados</span></li>
@@ -1344,7 +1344,7 @@
         <div class="plan-name">Enterprise</div>
         <div class="plan-price"><span class="custom">Sob consulta</span></div>
         <p class="plan-desc">Para equipes grandes e construtoras.</p>
-        <a href="#" class="btn btn-outline">Falar com vendas</a>
+        <a href="mailto:contato@quantx.com.br" class="btn btn-outline">Falar com vendas</a>
         <ul>
           <li><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg><span>Tudo do plano <strong>Pro</strong></span></li>
           <li><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5l3 3 5-6.5"/></svg><span><strong>SSO / SAML</strong></span></li>
@@ -1955,7 +1955,7 @@ document.querySelectorAll('.price-toggle button').forEach(btn => {
     const amt = document.querySelector('.plan.featured .amount');
     const sub = document.querySelector('.plan.featured .plan-desc');
     amt.textContent = amt.dataset['price' + mode[0].toUpperCase() + mode.slice(1)];
-    sub.textContent = sub.dataset['sub' + mode[0].toUpperCase() + mode.slice(1)];
+    sub.textContent = sub.dataset['sub' + mode[0].toUpperCase() + mode.slice(1)]; const ctaPro = document.getElementById('cta-pro'); if (ctaPro) ctaPro.href = 'https://app.quantx.com.br/auth?plan=pro&billing=' + mode + '&next=checkout';
   });
 });
 
@@ -2043,5 +2043,5 @@ function dismissCookie(kind) {
   cookieEl.classList.remove('show');
 }
 </script>
-</body>
+<script>(async()=>{try{const r=await fetch('https://app.quantx.com.br/api/billing/plans');const j=await r.json();const pro=(j.data&&j.data.plans||[]).find(p=>p.id==='pro');if(!pro)return;const amt=document.querySelector('.plan.featured .amount');const sub=document.querySelector('.plan.featured .plan-desc');if(!amt||pro.monthlyPrice==null)return;const f=v=>'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});amt.dataset.priceMonthly=f(pro.monthlyPrice);if(pro.yearlyPrice!=null){amt.dataset.priceYearly=f(pro.yearlyPrice/12);sub.dataset.subYearly=f(pro.yearlyPrice)+' cobrados anualmente.';}const active=(document.querySelector('.price-toggle button.active')||{}).dataset;const mode=active&&active.billing||'monthly';amt.textContent=mode==='yearly'?amt.dataset.priceYearly:amt.dataset.priceMonthly;sub.textContent=mode==='yearly'?sub.dataset.subYearly:sub.dataset.subMonthly;}catch(e){}})();</script></body>
 </html>
